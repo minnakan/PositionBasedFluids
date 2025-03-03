@@ -1,1 +1,1 @@
-# Position Based Fluids implementation in OpenGL
+# Position Based Fluids implementation using OpenGL
