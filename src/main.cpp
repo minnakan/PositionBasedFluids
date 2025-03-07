@@ -17,6 +17,12 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 void initParticleBuffers();
 void drawParticles(const PBFSystem& pbf, Shader& shader);
 
+// Ground plane functions
+void initGroundPlane();
+void drawGroundPlane(Shader& shader);
+unsigned int planeVAO = 0;
+unsigned int planeVBO = 0;
+
 //Global Vars
 const unsigned int SCR_WIDTH = 1280;
 const unsigned int SCR_HEIGHT = 720;
@@ -39,6 +45,7 @@ unsigned int particleVBO = 0;
 
 PBFSystem pbf;
 Shader* sphereShader;
+Shader* planeShader;
 
 #define USE_GPU_ENGINE 0
 extern "C"
@@ -70,7 +77,7 @@ int main(void)
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Position Based Fluids", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "Simple PBF Simulation", NULL, NULL);
     if (!window)
     {
         glfwTerminate();
@@ -100,9 +107,11 @@ int main(void)
 
     // Create custom shaders for sphere rendering
     sphereShader = new Shader(RESOURCES_PATH"vertex.vert", RESOURCES_PATH"fragment.frag");
+    planeShader = new Shader(RESOURCES_PATH"plane.vert", RESOURCES_PATH"plane.frag");
 
     // Initialize particle buffers and the PBF system
     initParticleBuffers();
+    initGroundPlane();
     pbf.initScene();
 
     // Main rendering loop
@@ -119,8 +128,8 @@ int main(void)
         // Update simulation
         pbf.step();
 
-        // Clear the frame
-        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+        // Clear the frame with a lighter gray background
+        glClearColor(0.85f, 0.85f, 0.85f, 1.0f);  // Light gray, almost white
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // Prepare view and projection matrices
@@ -130,7 +139,16 @@ int main(void)
             0.1f, 1000.0f);
         glm::mat4 model = glm::mat4(1.0f);
 
-        // Configure shader and draw particles
+        // Draw the ground plane first
+        planeShader->use();
+        planeShader->setMat4("model", model);
+        planeShader->setMat4("view", view);
+        planeShader->setMat4("projection", projection);
+        planeShader->setVec3("viewPos", camera.Position.x, camera.Position.y, camera.Position.z);
+        planeShader->setVec3("lightPos", 10.0f, 10.0f, 10.0f);
+        drawGroundPlane(*planeShader);
+
+        // Configure particle shader and draw particles
         sphereShader->use();
         sphereShader->setMat4("model", model);
         sphereShader->setMat4("view", view);
@@ -149,7 +167,10 @@ int main(void)
     // Clean up
     glDeleteBuffers(1, &particleVBO);
     glDeleteVertexArrays(1, &particleVAO);
+    glDeleteBuffers(1, &planeVBO);
+    glDeleteVertexArrays(1, &planeVAO);
     delete sphereShader;
+    delete planeShader;
 
     glfwTerminate();
     return 0;
@@ -216,7 +237,7 @@ void initParticleBuffers()
     };
 
     // Allocate memory for all particles
-    glBufferData(GL_ARRAY_BUFFER, 100000 * sizeof(ParticleVertex), nullptr, GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, 10000 * sizeof(ParticleVertex), nullptr, GL_DYNAMIC_DRAW);
 
     // Set up the vertex attributes
     // Position attribute
@@ -263,4 +284,53 @@ void drawParticles(const PBFSystem& pbf, Shader& shader)
 
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+void initGroundPlane()
+{
+    if (planeVAO == 0) glGenVertexArrays(1, &planeVAO);
+    if (planeVBO == 0) glGenBuffers(1, &planeVBO);
+
+    // Vertices for a simple quad (ground plane)
+    float planeVertices[] = {
+        // Positions            // Normals           // Texture coords
+        -10.0f, 0.0f, -10.0f,   0.0f, 1.0f, 0.0f,   0.0f, 0.0f,
+         10.0f, 0.0f, -10.0f,   0.0f, 1.0f, 0.0f,   10.0f, 0.0f,
+         10.0f, 0.0f,  10.0f,   0.0f, 1.0f, 0.0f,   10.0f, 10.0f,
+
+        -10.0f, 0.0f, -10.0f,   0.0f, 1.0f, 0.0f,   0.0f, 0.0f,
+         10.0f, 0.0f,  10.0f,   0.0f, 1.0f, 0.0f,   10.0f, 10.0f,
+        -10.0f, 0.0f,  10.0f,   0.0f, 1.0f, 0.0f,   0.0f, 10.0f
+    };
+
+    glBindVertexArray(planeVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, planeVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(planeVertices), planeVertices, GL_STATIC_DRAW);
+
+    // Position attribute
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+
+    // Normal attribute
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
+
+    // Texture attribute
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+
+    glBindVertexArray(0);
+}
+
+void drawGroundPlane(Shader& shader)
+{
+    shader.use();
+
+    // Set material properties
+    shader.setVec3("planeColor", 0.2f, 0.2f, 0.3f); // Dark blue-gray color
+
+    // Render plane
+    glBindVertexArray(planeVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
 }

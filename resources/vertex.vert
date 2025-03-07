@@ -5,25 +5,24 @@ layout (location = 1) in vec3 aColor;
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
-uniform float particleRadius = 0.05f;
+uniform float particleRadius;
 
-out vec3 FragPos;
-out vec3 Color;
+out vec3 FragPos;  // Changed from ParticleColor to FragPos
+out vec3 Color;    // Changed to Color to match fragment shader
 
 void main()
 {
-    // Pass position and color to fragment shader
+    // Transform position to world space for fragment shader
     FragPos = vec3(model * vec4(aPos, 1.0));
+    
+    // Pass color directly to fragment shader
     Color = aColor;
     
-    // Calculate point size based on distance to camera
-    vec4 viewPos = view * vec4(FragPos, 1.0);
-    float distance = -viewPos.z;
+    // Transform position to clip space
+    gl_Position = projection * view * model * vec4(aPos, 1.0);
     
-    // Scale point size based on distance and particle radius
-    // We multiply by a factor to make spheres visible at distance
-    gl_PointSize = particleRadius * 3000.0 / distance;
-    
-    // Output position
-    gl_Position = projection * viewPos;
+    float dist = length((view * model * vec4(aPos, 1.0)).xyz);
+    float scale = 500.0 / dist;
+    // Apply min/max size constraints
+    gl_PointSize = clamp(particleRadius * scale, 1.0, 30.0);
 }
