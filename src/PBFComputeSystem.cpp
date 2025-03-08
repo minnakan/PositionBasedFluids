@@ -19,7 +19,7 @@ bool PBFComputeSystem::initialize(unsigned int maxParticles) {
     // Store the maximum number of particles
     this->maxParticles = maxParticles;
 
-	checkComputeShaderSupport();
+	//checkComputeShaderSupport();
 
     // Create compute shader
     try {

@@ -83,10 +83,10 @@ ComputeShader::ComputeShader(const char* computePath) {
     GLenum type;
     GLsizei length;
 
-    for (int i = 0; i < numUniforms; i++) {
+    /*for (int i = 0; i < numUniforms; i++) {
         glGetActiveUniform(ID, i, sizeof(name), &length, &size, &type, name);
         std::cout << "Uniform #" << i << ": " << name << " (type=" << type << ", size=" << size << ")\n";
-    }
+    }*/
 
     // Print shader program validation status
     glValidateProgram(ID);
