@@ -190,10 +190,6 @@ void processInput(GLFWwindow* window)
         camera.ProcessKeyboard(LEFT, deltaTime);
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
         camera.ProcessKeyboard(RIGHT, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
-        pbf.gravity = glm::vec3(0.0f, 0.0f, 0.0f); // Zero gravity when space is held
-    else if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_RELEASE)
-        pbf.gravity = glm::vec3(0.0f, -9.81f, 0.0f); // Normal gravity when space is released
 }
 
 void mouse_callback(GLFWwindow* window, double xposIn, double yposIn)

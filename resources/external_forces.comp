@@ -13,6 +13,26 @@ struct Particle {
     float padding4;
 };
 
+layout(std140, binding = 0) uniform SimulationParams {
+    float dt;
+    float _padding0;
+    vec2  _padding1;
+    vec4   gravity;
+    float _padding2;
+
+    float particleRadius;         
+    float h;                    
+    float pad1[2];
+    
+    vec4  minBoundary;
+    vec4  maxBoundary;
+
+    uint  numParticles;
+    float cellSize;
+    uint  maxParticlesPerCell;
+    float _pad2;
+};
+
 layout(std430, binding = 1) buffer ParticleBuffer {
     Particle particles[];
 };
@@ -20,6 +40,13 @@ layout(std430, binding = 1) buffer ParticleBuffer {
 void main() {
     uint id = gl_GlobalInvocationID.x;
     
-    // Make all particles green (no ifs, no bindings, no conditions)
-    particles[id].color = vec3(1.0, 1.0, 0.0);
+    particles[id].velocity += gravity.xyz * dt;
+    particles[id].position += particles[id].velocity * dt;
+    particles[id].predictedPos = particles[id].position;
+
+    float speed = length(particles[id].velocity);
+    float normalizedSpeed = clamp(speed / 10.0, 0.0, 1.0);
+
+    //particles[id].position.y -= gravity.y;
+    particles[id].color = vec3(1.0f, 1.0f, 0.0);
 }

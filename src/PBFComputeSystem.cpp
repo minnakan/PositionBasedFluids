@@ -3,24 +3,12 @@
 #include <iomanip>
 #include <sstream> // for better logs
 
-PBFComputeSystem::PBFComputeSystem()
-    : computeShader(nullptr),
-    simParamsUBO(0),
-    particleSSBO(0),
-    numParticles(0),
-    maxParticles(0)
+PBFComputeSystem::PBFComputeSystem(): computeShader(nullptr),simParamsUBO(0),particleSSBO(0),numParticles(0),maxParticles(0)
 {
     // Initialize default parameters
     params = {};
     params.dt = 0.016f;
-    params.gravity = glm::vec3(0.0f, -9.81f, 0.0f);
-    params.particleRadius = 0.08f;
-    params.h = 0.16f;
-    params.minBoundary = glm::vec3(-2.0f, 0.0f, -2.0f);
-    params.maxBoundary = glm::vec3(2.0f, 10.0f, 2.0f);
-    params.numParticles = 0;
-    params.cellSize = params.h;
-    params.maxParticlesPerCell = 64;
+    params.gravity = glm::vec4(0.0f, -9.81f, 0.0f, 0.0f);
 }
 
 PBFComputeSystem::~PBFComputeSystem() {
@@ -31,11 +19,7 @@ bool PBFComputeSystem::initialize(unsigned int maxParticles) {
     // Store the maximum number of particles
     this->maxParticles = maxParticles;
 
-	//checkComputeShaderSupport();
-
-    // Print the particle struct size for verification
-    std::cout << "[PBFComputeSystem] CPU Particle struct size: "
-        << sizeof(Particle) << " bytes\n";
+	checkComputeShaderSupport();
 
     // Create compute shader
     try {
@@ -86,23 +70,15 @@ void PBFComputeSystem::cleanup() {
     particleSSBO = 0;
 }
 
-void PBFComputeSystem::updateSimulationParams(
-    float dt,
-    const glm::vec3& gravity,
-    float particleRadius,
-    float smoothingLength,
-    const glm::vec3& minBoundary,
-    const glm::vec3& maxBoundary
-) {
+void PBFComputeSystem::updateSimulationParams(float dt,const glm::vec4& gravity,float particleRadius,float smoothingLength,const glm::vec4& minBoundary,const glm::vec4& maxBoundary) {
     // Update local params struct
     params.dt = dt;
     params.gravity = gravity;
-    params.particleRadius = particleRadius;
-    params.h = smoothingLength;
-    params.minBoundary = minBoundary;
-    params.maxBoundary = maxBoundary;
-    params.cellSize = smoothingLength;
-
+	params.particleRadius = particleRadius;
+	params.h = smoothingLength;
+	params.minBoundary = minBoundary;
+	params.maxBoundary = maxBoundary;
+    
     // Upload to GPU
     glBindBuffer(GL_UNIFORM_BUFFER, simParamsUBO);
     glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(SimParams), &params);
@@ -123,12 +99,6 @@ void PBFComputeSystem::uploadParticles(const std::vector<Particle>& particles) {
     else {
         numParticles = (unsigned int)particles.size();
     }
-
-    // Update the particle count in the params
-    params.numParticles = numParticles;
-    glBindBuffer(GL_UNIFORM_BUFFER, simParamsUBO);
-    glBufferSubData(GL_UNIFORM_BUFFER, offsetof(SimParams, numParticles), sizeof(unsigned int), &numParticles);
-    glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
     // Upload
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, particleSSBO);
@@ -262,9 +232,9 @@ bool PBFComputeSystem::checkComputeShaderSupport() {
     glGetIntegerv(GL_NUM_SHADING_LANGUAGE_VERSIONS, &numShaderTypes);
 
     std::cout << "=== OpenGL Compute Shader Capability Check ===\n";
-    std::cout << "GL_VENDOR: " << glGetString(GL_VENDOR) << "\n";
+    std::cout << "GL_VENDOR:   " << glGetString(GL_VENDOR) << "\n";
     std::cout << "GL_RENDERER: " << glGetString(GL_RENDERER) << "\n";
-    std::cout << "GL_VERSION: " << glGetString(GL_VERSION) << "\n";
+    std::cout << "GL_VERSION:  " << glGetString(GL_VERSION) << "\n";
 
     // Get max work group counts
     glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 0, &maxComputeWorkGroupCount[0]);
@@ -284,7 +254,7 @@ bool PBFComputeSystem::checkComputeShaderSupport() {
         << maxComputeWorkGroupCount[1] << ", "
         << maxComputeWorkGroupCount[2] << "\n";
 
-    std::cout << "Max compute work group size: "
+    std::cout << "Max compute work group size:  "
         << maxComputeWorkGroupSize[0] << ", "
         << maxComputeWorkGroupSize[1] << ", "
         << maxComputeWorkGroupSize[2] << "\n";
@@ -292,7 +262,44 @@ bool PBFComputeSystem::checkComputeShaderSupport() {
     std::cout << "Max compute work group invocations: "
         << maxComputeWorkGroupInvocations << "\n";
 
-    // Check for compute shader support
+    // -----------------------------------------------------------------------
+    // Add uniform-related queries here:
+    // -----------------------------------------------------------------------
+    GLint maxComputeUniformBlocks = 0;
+    glGetIntegerv(GL_MAX_COMPUTE_UNIFORM_BLOCKS, &maxComputeUniformBlocks);
+    std::cout << "Max compute uniform blocks: "
+        << maxComputeUniformBlocks << "\n";
+
+    GLint maxComputeUniformComponents = 0;
+    glGetIntegerv(GL_MAX_COMPUTE_UNIFORM_COMPONENTS, &maxComputeUniformComponents);
+    std::cout << "Max compute uniform components: "
+        << maxComputeUniformComponents << "\n";
+
+    GLint maxUniformBlockSize = 0;
+    glGetIntegerv(GL_MAX_UNIFORM_BLOCK_SIZE, &maxUniformBlockSize);
+    std::cout << "Max uniform block size (bytes): "
+        << maxUniformBlockSize << "\n";
+
+    // You might also want to see how many UBO binding points you have in total:
+    GLint maxUniformBufferBindings = 0;
+    glGetIntegerv(GL_MAX_UNIFORM_BUFFER_BINDINGS, &maxUniformBufferBindings);
+    std::cout << "Max uniform buffer bindings: "
+        << maxUniformBufferBindings << "\n";
+
+    // If you need maximum SSBO bindings or maximum SSBO size:
+    GLint maxShaderStorageBufferBindings = 0;
+    glGetIntegerv(GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS, &maxShaderStorageBufferBindings);
+    std::cout << "Max shader storage buffer bindings: "
+        << maxShaderStorageBufferBindings << "\n";
+
+    GLint maxShaderStorageBlockSize = 0;
+    glGetIntegerv(GL_MAX_SHADER_STORAGE_BLOCK_SIZE, &maxShaderStorageBlockSize);
+    std::cout << "Max shader storage block size (bytes): "
+        << maxShaderStorageBlockSize << "\n";
+
+    // -----------------------------------------------------------------------
+    // Determine overall compute support
+    // -----------------------------------------------------------------------
     bool supported = (maxComputeWorkGroupSize[0] > 0);
     std::cout << "Compute shaders supported: " << (supported ? "YES" : "NO") << "\n";
 

@@ -9,11 +9,11 @@ public:
     // Public simulation parameters for easy access
     float dt;
     float boundaryDamping;
-    glm::vec3 gravity;
+    glm::vec4 gravity;
     float particleRadius;
     float h;  // Smoothing length
-    glm::vec3 minBoundary;
-    glm::vec3 maxBoundary;
+    glm::vec4 minBoundary;
+    glm::vec4 maxBoundary;
     bool enableDebugInfo;
 
     // Public particle data for rendering

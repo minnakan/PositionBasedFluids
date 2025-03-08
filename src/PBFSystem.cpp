@@ -6,13 +6,12 @@
 PBFSystem::PBFSystem()
 {
     dt = 0.016f;
-    boundaryDamping = 0.5f;
-    gravity = glm::vec3(0.0f, -9.81f, 0.0f);
+    gravity = glm::vec4(0.0f, -9.81f, 0.0f, 0.0f);
     particleRadius = 0.1f;
     h = particleRadius * 2.0f;  // Smoothing length
 
-    minBoundary = glm::vec3(-5.0f, 0.0f, -5.0f);
-    maxBoundary = glm::vec3(5.0f, 10.0f, 5.0f);
+    minBoundary = glm::vec4(-5.0f, 0.0f, -5.0f, 0.0f);
+    maxBoundary = glm::vec4(5.0f, 10.0f, 5.0f, 0.0f);
 
     computeSystem = nullptr;
     computeSystemInitialized = false;

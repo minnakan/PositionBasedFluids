@@ -20,14 +20,23 @@ struct Particle {
 // This struct must match the layout in your compute shader
 struct SimParams {
     float dt;
-    glm::vec3 gravity;
+    float padding0;
+    glm::vec2 padding1;
+
+    glm::vec4 gravity;
+    float padding2;
+
     float particleRadius;
-    float h;              // Smoothing length
-    glm::vec3 minBoundary;
-    glm::vec3 maxBoundary;
-    unsigned int numParticles;  // Changed position to match GPU
-    float cellSize;             // Changed position to match GPU
+    float h;
+    float pad1[2];
+
+    glm::vec4 minBoundary;
+    glm::vec4 maxBoundary;
+
+    unsigned int numParticles;
+    float cellSize;                                                                     
     unsigned int maxParticlesPerCell;
+	float pad2;
 };
 
 class PBFComputeSystem {
@@ -42,14 +51,7 @@ public:
 
 	bool checkComputeShaderSupport();
 
-    void updateSimulationParams(
-        float dt,
-        const glm::vec3& gravity,
-        float particleRadius,
-        float smoothingLength,
-        const glm::vec3& minBoundary,
-        const glm::vec3& maxBoundary
-    );
+    void updateSimulationParams(float dt,const glm::vec4& gravity,float particleRadius,float smoothingLength,const glm::vec4& minBoundary,const glm::vec4& maxBoundary);
 
 private:
     void createBuffers(unsigned int maxParticles);
