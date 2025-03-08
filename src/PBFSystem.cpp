@@ -29,7 +29,7 @@ void PBFSystem::initScene()
     particles.clear();
 
     // Create a small block of particles
-    const int numX = 5, numY = 5, numZ = 5;
+    const int numX = 25, numY = 25, numZ = 25;
     float spacing = particleRadius * 2.1f;
     glm::vec3 start(-numX * spacing * 0.5f, 6.0f, -numZ * spacing * 0.5f);
 
@@ -110,7 +110,7 @@ void PBFSystem::initializeComputeSystem()
     }
 
     // Some max capacity
-    const unsigned int MAX_PARTICLES = 10000;
+    const unsigned int MAX_PARTICLES = 100000;
     bool success = computeSystem->initialize(MAX_PARTICLES);
 
     if (success) {
