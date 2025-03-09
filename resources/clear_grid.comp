@@ -1,0 +1,49 @@
+// In a separate "clear_grid.comp" shader:
+#version 430 core
+
+layout(local_size_x = 256) in;
+
+layout(std140, binding = 0) uniform SimulationParams {
+    float dt;
+    float _pad0;
+    float _pad1;
+    float _pad2;
+
+    vec4  gravity;
+
+    float particleRadius;
+    float h;
+    float _pad3;
+    float _pad4;
+
+    vec4 minBoundary;
+    vec4 maxBoundary;
+
+    uint numParticles;
+    float cellSize;
+    uint maxParticlesPerCell;
+    float _pad5;
+};
+
+layout(std430, binding = 2) buffer CellCounts {
+    uint cellCounts[];
+};
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    
+    // Calculate total number of cells
+    ivec3 gridDim = ivec3(ceil((maxBoundary.xyz - minBoundary.xyz) / cellSize));
+    uint totalCells = gridDim.x * gridDim.y * gridDim.z;
+    
+    // Each thread clears multiple cells
+    uint cellsPerThread = (totalCells + gl_NumWorkGroups.x * gl_WorkGroupSize.x - 1) / 
+                          (gl_NumWorkGroups.x * gl_WorkGroupSize.x);
+    
+    for (uint i = 0; i < cellsPerThread; i++) {
+        uint cellId = id * cellsPerThread + i;
+        if (cellId < totalCells) {
+            cellCounts[cellId] = 0;
+        }
+    }
+}

@@ -88,7 +88,5 @@ void main() {
     particles[id].predictedPos = particles[id].position;
     
     // Keep the visualization code
-    float speed = length(particles[id].velocity);
-    float normalizedSpeed = clamp(speed / 10.0, 0.0, 1.0);
-    particles[id].color = vec3(1.0f, 1.0f, 0.0);
+    //particles[id].color = vec3(1.0f, 1.0f, 0.0);
 }

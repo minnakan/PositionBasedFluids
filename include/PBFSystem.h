@@ -14,6 +14,8 @@ public:
     float h;  // Smoothing length
     glm::vec4 minBoundary;
     glm::vec4 maxBoundary;
+    float cellSize;
+    unsigned int maxParticlesPerCell;
     bool enableDebugInfo;
 
     // Public particle data for rendering

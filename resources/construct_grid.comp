@@ -1,0 +1,88 @@
+#version 430 core
+
+layout(local_size_x = 256) in;
+
+struct Particle {
+    vec3 position;
+    float padding1;
+    vec3 velocity;
+    float padding2;
+    vec3 predictedPos;
+    float padding3;
+    vec3 color;
+    float padding4;
+};
+
+layout(std140, binding = 0) uniform SimulationParams {
+    float dt;
+    float _pad0;
+    float _pad1;
+    float _pad2;
+
+    vec4  gravity;
+
+    float particleRadius;
+    float h;
+    float _pad3;
+    float _pad4;
+
+    vec4 minBoundary;
+    vec4 maxBoundary;
+
+    uint numParticles;
+    float cellSize;
+    uint maxParticlesPerCell;
+    float _pad5;
+};
+
+layout(std430, binding = 1) buffer ParticleBuffer {
+    Particle particles[];
+};
+
+// Cell counts - tracks how many particles are in each cell
+layout(std430, binding = 2) buffer CellCounts {
+    uint cellCounts[];
+};
+
+// Particle indices stored in each cell
+layout(std430, binding = 3) buffer CellParticles {
+    uint cellParticles[];
+};
+
+// Utility function to calculate cell index from position
+uint getCellIndex(vec3 position) {
+    // Calculate grid cell coordinates
+    ivec3 cellPos = ivec3(floor((position - minBoundary.xyz) / cellSize));
+    
+    // Calculate grid dimensions
+    ivec3 gridDim = ivec3(ceil((maxBoundary.xyz - minBoundary.xyz) / cellSize));
+    
+    // Clamp to valid cell range
+    cellPos = clamp(cellPos, ivec3(0), gridDim - ivec3(1));
+    
+    // Convert to 1D index
+    return uint(cellPos.x + cellPos.y * gridDim.x + cellPos.z * gridDim.x * gridDim.y);
+}
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    if (id >= numParticles) return;
+    
+    
+    // Ensure counters are reset before proceeding
+    memoryBarrierBuffer();
+    barrier();
+    
+    // Get cell index for this particle
+    uint cellIdx = getCellIndex(particles[id].predictedPos);
+    
+    // Add particle to cell
+    uint insertIndex = atomicAdd(cellCounts[cellIdx], 1);
+    
+    // Only insert if we haven't exceeded max particles per cell
+    if (insertIndex < maxParticlesPerCell) {
+        cellParticles[cellIdx * maxParticlesPerCell + insertIndex] = id;
+    }
+
+    particles[id].color = vec3(1.0f, 1.0f, 0.0);
+}

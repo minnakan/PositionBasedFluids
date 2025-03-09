@@ -50,22 +50,32 @@ public:
     PBFComputeSystem();
     ~PBFComputeSystem();
 
-    bool initialize(unsigned int maxParticles);
+    bool initialize(unsigned int maxParticles, float dt, const glm::vec4& gravity, float particleRadius, float smoothingLength, const glm::vec4& minBoundary, const glm::vec4& maxBoundary, float cellSize,unsigned int maxParticlesPerCell);
     void uploadParticles(const std::vector<Particle>& particles);
     void downloadParticles(std::vector<Particle>& particles);
     void step();
 
 	bool checkComputeShaderSupport();
 
-    void updateSimulationParams(float dt,const glm::vec4& gravity,float particleRadius,float smoothingLength,const glm::vec4& minBoundary,const glm::vec4& maxBoundary);
+    void applyExternalForces();
+    void findNeighbors();
+
+    void updateSimulationParams(float dt,const glm::vec4& gravity,float particleRadius,float smoothingLength,const glm::vec4& minBoundary,const glm::vec4& maxBoundary, float cellSize, unsigned int maxParticlesPerCell);
 
 private:
     void createBuffers(unsigned int maxParticles);
+    void initializeGrid();
+    //void bindBuffersForGridConstruction();
+
     void cleanup();
 
-    ComputeShader* computeShader;
+    ComputeShader* externalForcesShader;
+    ComputeShader* constructGridShader;
+    ComputeShader* clearGridShader;
     GLuint simParamsUBO;
     GLuint particleSSBO;
+    GLuint cellCountsBuffer; // Stores count of particles per cell
+	GLuint cellParticlesBuffer; // Stores particle indices per cell
     unsigned int numParticles;
     unsigned int maxParticles;
     SimParams params;
