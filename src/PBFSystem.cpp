@@ -10,8 +10,8 @@ PBFSystem::PBFSystem()
     particleRadius = 0.1f;
     h = particleRadius * 2.0f;  // Smoothing length
 
-    minBoundary = glm::vec4(-5.0f, 0.0f, -5.0f, 0.0f);
-    maxBoundary = glm::vec4(5.0f, 10.0f, 5.0f, 0.0f);
+    minBoundary = glm::vec4(-10.0f, 0.0f, -5.0f, 0.0f);
+    maxBoundary = glm::vec4(10.0f, 10.0f, 5.0f, 0.0f);
 
     computeSystem = nullptr;
     computeSystemInitialized = false;
@@ -94,7 +94,6 @@ void PBFSystem::step()
 
     // Update simulation parameters in GPU
     computeSystem->updateSimulationParams(dt, gravity, particleRadius, h, minBoundary, maxBoundary);
-	//computeSystem->uploadParticles(particles);
     // Run GPU step
     computeSystem->step();
 

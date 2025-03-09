@@ -5,10 +5,6 @@
 
 PBFComputeSystem::PBFComputeSystem(): computeShader(nullptr),simParamsUBO(0),particleSSBO(0),numParticles(0),maxParticles(0)
 {
-    // Initialize default parameters
-    params = {};
-    params.dt = 0.016f;
-    params.gravity = glm::vec4(0.0f, -9.81f, 0.0f, 0.0f);
 }
 
 PBFComputeSystem::~PBFComputeSystem() {
@@ -78,6 +74,7 @@ void PBFComputeSystem::updateSimulationParams(float dt,const glm::vec4& gravity,
 	params.h = smoothingLength;
 	params.minBoundary = minBoundary;
 	params.maxBoundary = maxBoundary;
+
     
     // Upload to GPU
     glBindBuffer(GL_UNIFORM_BUFFER, simParamsUBO);

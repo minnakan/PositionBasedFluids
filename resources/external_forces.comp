@@ -14,23 +14,35 @@ struct Particle {
 };
 
 layout(std140, binding = 0) uniform SimulationParams {
-    float dt;
-    float _padding0;
-    vec2  _padding1;
-    vec4   gravity;
-    float _padding2;
+    // -- Group 1: 16 bytes (four floats) --
+    float dt;        // offset 0..3
+    float _pad0;     // offset 4..7
+    float _pad1;     // offset 8..11
+    float _pad2;     // offset 12..15
+    // Next available offset = 16
 
-    float particleRadius;         
-    float h;                    
-    float pad1[2];
-    
-    vec4  minBoundary;
-    vec4  maxBoundary;
+    // -- Group 2: gravity occupies exactly 16 bytes --
+    vec4  gravity;    // offset 16..31
+    // Next offset = 32
 
-    uint  numParticles;
-    float cellSize;
-    uint  maxParticlesPerCell;
-    float _pad2;
+    // -- Group 3: 16 bytes total for four floats --
+    float particleRadius;   // offset 32..35
+    float h;                // offset 36..39
+    float _pad3;            // offset 40..43
+    float _pad4;            // offset 44..47
+    // Next offset = 48
+
+    // -- Group 4: two vec4 boundaries, each 16 bytes --
+    vec4 minBoundary;       // offset 48..63
+    vec4 maxBoundary;       // offset 64..79
+    // Next offset = 80
+
+    // -- Group 5: 16 bytes for these four scalars --
+    uint  numParticles;         // offset 80..83
+    float cellSize;             // offset 84..87
+    uint  maxParticlesPerCell;  // offset 88..91
+    float _pad5;                // offset 92..95
+    // Next offset = 96
 };
 
 layout(std430, binding = 1) buffer ParticleBuffer {
@@ -40,13 +52,43 @@ layout(std430, binding = 1) buffer ParticleBuffer {
 void main() {
     uint id = gl_GlobalInvocationID.x;
     
+    // Apply external forces (gravity)
     particles[id].velocity += gravity.xyz * dt;
+    
+    // Update position based on velocity
     particles[id].position += particles[id].velocity * dt;
+    
+    // Floor constraint with bounce effect
+    if (particles[id].position.y < minBoundary.y + particleRadius) {
+        particles[id].position.y = minBoundary.y + particleRadius;
+        particles[id].velocity.y = -particles[id].velocity.y * 0.3; // Bounce with damping
+    }
+    
+    // X-axis boundaries (left and right walls)
+    if (particles[id].position.x < minBoundary.x + particleRadius) {
+        particles[id].position.x = minBoundary.x + particleRadius;
+        particles[id].velocity.x = -particles[id].velocity.x * 0.3;
+    }
+    if (particles[id].position.x > maxBoundary.x - particleRadius) {
+        particles[id].position.x = maxBoundary.x - particleRadius;
+        particles[id].velocity.x = -particles[id].velocity.x * 0.3;
+    }
+    
+    // Z-axis boundaries (front and back walls)
+    if (particles[id].position.z < minBoundary.z + particleRadius) {
+        particles[id].position.z = minBoundary.z + particleRadius;
+        particles[id].velocity.z = -particles[id].velocity.z * 0.3;
+    }
+    if (particles[id].position.z > maxBoundary.z - particleRadius) {
+        particles[id].position.z = maxBoundary.z - particleRadius;
+        particles[id].velocity.z = -particles[id].velocity.z * 0.3;
+    }
+    
+    // Predict position for next step (constraint solving)
     particles[id].predictedPos = particles[id].position;
-
+    
+    // Keep the visualization code
     float speed = length(particles[id].velocity);
     float normalizedSpeed = clamp(speed / 10.0, 0.0, 1.0);
-
-    //particles[id].position.y -= gravity.y;
     particles[id].color = vec3(1.0f, 1.0f, 0.0);
 }

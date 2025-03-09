@@ -19,24 +19,30 @@ struct Particle {
 
 // This struct must match the layout in your compute shader
 struct SimParams {
+    // Group 1
     float dt;
-    float padding0;
-    glm::vec2 padding1;
+    float _pad0;
+    float _pad1;
+    float _pad2;
 
+    // Group 2
     glm::vec4 gravity;
-    float padding2;
 
+    // Group 3
     float particleRadius;
     float h;
-    float pad1[2];
+    float _pad3;
+    float _pad4;
 
+    // Group 4
     glm::vec4 minBoundary;
     glm::vec4 maxBoundary;
 
+    // Group 5
     unsigned int numParticles;
-    float cellSize;                                                                     
+    float cellSize;
     unsigned int maxParticlesPerCell;
-	float pad2;
+    float _pad5;
 };
 
 class PBFComputeSystem {
