@@ -11,19 +11,19 @@ PBFSystem::PBFSystem()
     particleRadius = 0.2f;
     h = particleRadius * 2.5f;  // Smoothing length
 
-    minBoundary = glm::vec4(-5.0f, 0.0f, -5.0f, 0.0f);
-    maxBoundary = glm::vec4(5.0f, 20.0f, 5.0f, 0.0f);
+    minBoundary = glm::vec4(-8.0f, 0.0f, -2.5f, 0.0f);
+    maxBoundary = glm::vec4(8.0f, 100.0f, 2.5f, 0.0f);
 
 	cellSize = h;
 	maxParticlesPerCell = 64;
 
-    restDensity = 1000.0f;
+    restDensity = 200.0f;
 
     computeSystem = nullptr;
     computeSystemInitialized = false;
 
     frameCount = 0;
-    warmupFrames = 600;
+    warmupFrames = 0;
 }
 
 PBFSystem::~PBFSystem()
@@ -35,103 +35,70 @@ void PBFSystem::initScene()
 {
     // Reset
     particles.clear();
+    frameCount = 0;  // Reset frame counter for warmup
 
-    // Use a smaller percentage of boundary to keep particles away from walls
-    float boundaryUsagePercent = 0.25f;  // Reduced from 0.5
+    // Dam break parameters
+    const float damWidth = 4.0f;
+    const float damHeight = 50.0f;
+    const float damDepth = 10.f;
 
-    // Fixed particle counts as requested
-    const int numX = 20, numY = 20, numZ = 20;  // Reduced particle count for easier visualization
+    // Place dam in left portion of container
+    const float leftOffset = minBoundary.x + particleRadius * 3.0f;
 
-    // Calculate available space within boundaries
-    glm::vec3 minPos = glm::vec3(minBoundary.x, minBoundary.y, minBoundary.z);
-    glm::vec3 maxPos = glm::vec3(maxBoundary.x, maxBoundary.y, maxBoundary.z);
-    glm::vec3 totalSpace = maxPos - minPos;
+    // Use conservative spacing (2.1x particle radius)
+    const float spacing = particleRadius * 2.1f;
 
-    // Calculate reduced space based on the usage percentage
-    glm::vec3 halfUnusedSpace = totalSpace * (1.0f - boundaryUsagePercent) * 0.5f;
-    glm::vec3 reducedMinPos = minPos + halfUnusedSpace;
-    glm::vec3 reducedMaxPos = maxPos - halfUnusedSpace;
+    // Calculate number of particles in each dimension
+    const int numX = static_cast<int>(damWidth / spacing);
+    const int numY = static_cast<int>(damHeight / spacing);
+    const int numZ = static_cast<int>(damDepth / spacing);
 
-    // Add extra margin at the bottom to create a more visible stack
-    reducedMinPos.y += totalSpace.y * 0.1f;  // Move starting position up
+    std::cout << "[PBFSystem] Creating dam break: " << numX << "x" << numY << "x" << numZ<< " (" << (numX * numY * numZ) << " total particles)\n";
+    std::cout << "[PBFSystem] Using spacing: " << spacing << " (radius: " << particleRadius << ")\n";
 
-    // Account for particle radius to keep particles fully within boundaries
-    reducedMinPos += glm::vec3(particleRadius * 2.0f);  // Double margin
-    reducedMaxPos -= glm::vec3(particleRadius * 2.0f);  // Double margin
-
-    // Available space for particles
-    glm::vec3 availableSpace = reducedMaxPos - reducedMinPos;
-
-    // Calculate spacing based on available space and particle count
-    glm::vec3 spacing = glm::vec3(
-        availableSpace.x / (float)numX,
-        availableSpace.y / (float)numY,
-        availableSpace.z / (float)numZ
-    );
-
-    // Use minimum spacing value for all dimensions to keep particles spherical
-    float minSpacing = std::min(std::min(spacing.x, spacing.y), spacing.z);
-
-    // Ensure minimum spacing is greater than 2x particle radius
-    minSpacing = std::max(minSpacing, particleRadius * 2.1f);
-
-    // Calculate starting position to center the block
-    glm::vec3 blockSize = glm::vec3(numX, numY, numZ) * minSpacing;
-    glm::vec3 start = reducedMinPos + (availableSpace - blockSize) * 0.5f;
-
-    // Move block up for a more interesting demo
-    // Keep the vertical position higher but within the reduced space
-    start.y = reducedMinPos.y + availableSpace.y * 2.7f;  // Start higher up
-
-    // Ensure start position is valid
-    start = glm::max(start, reducedMinPos);
-
-    std::cout << "[PBFSystem] Using " << (boundaryUsagePercent * 100.0f) << "% of boundary space\n";
-    std::cout << "[PBFSystem] Creating particles: " << numX << "x" << numY << "x" << numZ << " (" << (numX * numY * numZ) << " total)\n";
-    std::cout << "[PBFSystem] Block starts at: " << start.x << ", " << start.y << ", " << start.z << "\n";
-    std::cout << "[PBFSystem] Using spacing: " << minSpacing << "\n";
-
-    // Random jitter for natural arrangement
+    // Tiny jitter to break symmetry (very small to maintain stability)
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::uniform_real_distribution<float> jitter(-0.01f, 0.01f);  // Reduced jitter amount
+    std::uniform_real_distribution<float> jitter(-0.001f, 0.001f);
 
-    // Create particles in a cube formation
+    // Create particles in a rectangular dam formation
     for (int x = 0; x < numX; ++x) {
         for (int y = 0; y < numY; ++y) {
             for (int z = 0; z < numZ; ++z) {
                 Particle p;
+
+                // Position particles with exact spacing plus tiny jitter
                 p.position = glm::vec3(
-                    start.x + x * minSpacing + jitter(gen) * minSpacing * 0.05f,
-                    start.y + y * minSpacing + jitter(gen) * minSpacing * 0.05f,
-                    start.z + z * minSpacing + jitter(gen) * minSpacing * 0.05f
+                    leftOffset + x * spacing + jitter(gen) * spacing * 0.01f,
+                    minBoundary.y + particleRadius * 2.0f + y * spacing + jitter(gen) * spacing * 0.01f,
+                    minBoundary.z + particleRadius * 3.0f + z * spacing + jitter(gen) * spacing * 0.01f
                 );
 
-                // Final safety check to ensure position is within full boundaries
-                p.position.x = std::clamp(p.position.x, minBoundary.x + particleRadius * 1.5f, maxBoundary.x - particleRadius * 1.5f);
-                p.position.y = std::clamp(p.position.y, minBoundary.y + particleRadius * 1.5f, maxBoundary.y - particleRadius * 1.5f);
-                p.position.z = std::clamp(p.position.z, minBoundary.z + particleRadius * 1.5f, maxBoundary.z - particleRadius * 1.5f);
+                // Safety check boundary constraints
+                p.position.x = std::clamp(p.position.x,
+                    minBoundary.x + particleRadius * 1.5f,
+                    maxBoundary.x - particleRadius * 1.5f);
+                p.position.y = std::clamp(p.position.y,
+                    minBoundary.y + particleRadius * 1.5f,
+                    maxBoundary.y - particleRadius * 1.5f);
+                p.position.z = std::clamp(p.position.z,
+                    minBoundary.z + particleRadius * 1.5f,
+                    maxBoundary.z - particleRadius * 1.5f);
 
+                // Initialize with zero velocity
                 p.padding1 = 0.0f;
                 p.velocity = glm::vec3(0.0f);
                 p.padding2 = 0.0f;
                 p.predictedPosition = p.position;
                 p.padding3 = 0.0f;
 
-                // Color by height ratio
-                float heightRatio = (float)y / numY;
-                if (heightRatio < 0.33f) {
-                    // Blue-ish
-                    p.color = glm::vec3(0.1f, 0.2f, 0.9f);
-                }
-                else if (heightRatio < 0.66f) {
-                    // Green-ish
-                    p.color = glm::vec3(0.1f, 0.9f, 0.2f);
-                }
-                else {
-                    // Red-ish
-                    p.color = glm::vec3(0.9f, 0.2f, 0.1f);
-                }
+                // Color gradient from bottom (blue) to top (red)
+                float heightRatio = static_cast<float>(y) / numY;
+                p.color = glm::vec3(
+                    heightRatio,           // R increases with height
+                    0.2f,                  // G constant
+                    1.0f - heightRatio     // B decreases with height
+                );
                 p.padding4 = 0.0f;
 
                 particles.push_back(p);
@@ -158,6 +125,8 @@ void PBFSystem::step()
         std::cerr << "[PBFSystem] ERROR: compute system not initialized!\n";
         return;
     }
+    const int numSubsteps = 5;
+    const float subDt = dt / numSubsteps;
 
     // Calculate warmup progress (0 to 1)
     float warmupProgress = std::min(1.0f, frameCount / (float)warmupFrames);
@@ -165,12 +134,16 @@ void PBFSystem::step()
     // Scale gravity forces during warmup
     glm::vec4 scaledGravity = gravity * warmupProgress;
 
+    for (int subStep = 0; subStep < numSubsteps; ++subStep) {
+        computeSystem->updateSimulationParams(dt, scaledGravity, particleRadius, h, minBoundary, maxBoundary, cellSize, maxParticlesPerCell, restDensity);
+        computeSystem->step();
+    }
+
     // Update simulation parameters with scaled gravity
-    computeSystem->updateSimulationParams(dt, scaledGravity, particleRadius, h,
-        minBoundary, maxBoundary, cellSize, maxParticlesPerCell, restDensity);
+    //computeSystem->updateSimulationParams(dt, scaledGravity, particleRadius, h,minBoundary, maxBoundary, cellSize, maxParticlesPerCell, restDensity);
 
     // Run GPU step
-    computeSystem->step();
+    //computeSystem->step();
 
     // Download to CPU so CPU can also see the updated positions
     computeSystem->downloadParticles(particles);

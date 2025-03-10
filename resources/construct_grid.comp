@@ -85,7 +85,4 @@ void main() {
     if (insertIndex < maxParticlesPerCell) {
         cellParticles[cellIdx * maxParticlesPerCell + insertIndex] = id;
     }
-    
-    // REMOVED: particle color override
-    // This was causing all particles to be yellow regardless of density/position
 }

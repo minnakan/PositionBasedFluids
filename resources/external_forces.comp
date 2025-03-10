@@ -109,14 +109,4 @@ void main() {
         particles[id].velocity.z = -particles[id].velocity.z * boundaryDamping;
         particles[id].velocity.z -= penetrationDepth * repulsionStrength;
     }
-    
-    // IMPORTANT: Velocity damping to prevent energy buildup in the system
-    particles[id].velocity *= 0.995; // Small global damping
-    
-    // Additional velocity cap to prevent excessive speeds
-    float maxVelocity = 10.0; // Reduced from 10.0
-    float currentSpeed = length(particles[id].velocity);
-    if (currentSpeed > maxVelocity) {
-        particles[id].velocity = (particles[id].velocity / currentSpeed) * maxVelocity;
-    }
 }

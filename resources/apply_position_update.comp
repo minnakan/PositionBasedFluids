@@ -168,9 +168,9 @@ void main() {
                         float lambdaSum = particles[id].lambda + particles[neighborId].lambda;
                         
                         // Calculate artificial pressure term (s_corr) from equation 13
-                        float k = 0.2;      // Reduced from 0.2 to lower artificial pressure
-                        float n = 4.0;      // Power parameter
-                        float deltaq = 0.2 * h;  // Target sampling distance
+                        float k = 0.1;      
+                        float n = 4.0;     
+                        float deltaq = 0.3 * h;
                         
                         float wij = W_Poly6(dist, h);
                         float wdeltaq = W_Poly6(deltaq, h);
@@ -190,10 +190,16 @@ void main() {
     
     // Scale by 1/restDensity
     deltaPos /= restDensity;
+
+    float maxDeltaPos = particleRadius * 0.5;
+    float deltaMag = length(deltaPos);
+    if (deltaMag > maxDeltaPos) {
+        deltaPos = (deltaPos / deltaMag) * maxDeltaPos;
+    }
     
     // Add wall repulsion forces with reduced effect
     vec3 wallRepulsion = calculateWallRepulsion(pos);
-    deltaPos += wallRepulsion * 0.005; // Significantly reduced scale factor
+    deltaPos += wallRepulsion * 0.010; // Significantly reduced scale factor
     
     // Apply position correction
     particles[id].predictedPos += deltaPos;
@@ -220,14 +226,5 @@ void main() {
     }
     if (particles[id].predictedPos.z > maxBoundary.z - particleRadius) {
         particles[id].predictedPos.z = maxBoundary.z - particleRadius - safetyMargin;
-    }
-    
-    // Update color based on position change magnitude (for visualization)
-    float deltaMag = length(deltaPos);
-    
-    // Visual feedback: color gradient from blue to red based on position correction magnitude
-    if (deltaMag > 0.0) {
-        float normalizedDelta = min(deltaMag * 50.0, 1.0);
-        //particles[id].color = mix(vec3(0.0, 0.0, 1.0), vec3(1.0, 0.0, 0.0), normalizedDelta);
     }
 }

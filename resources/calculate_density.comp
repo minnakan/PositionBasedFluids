@@ -251,25 +251,8 @@ void main() {
     
     // Add small epsilon term for numerical stability (CFM)
     float epsilon = 0.1; // Reduced from 1e+05 for smaller damping
+
     
     // Calculate lambda according to equation 11
-    // Clamp the constraint to avoid extreme corrections
-    C = clamp(C, -0.2, 0.2);
     particles[id].lambda = -C / (gradientSum + epsilon);
-
-    // Update particle color based on density ratio
-    float ratio = min(particles[id].density / restDensity, 2.0);
-    if (ratio < 0.8) {
-        // Low density - blue
-        particles[id].color = vec3(0.0, 0.0, 1.0);
-    } else if (ratio < 1.0) {
-        // Normal density - cyan to green
-        particles[id].color = mix(vec3(0.0, 1.0, 1.0), vec3(0.0, 1.0, 0.0), (ratio - 0.8) * 5.0);
-    } else if (ratio < 1.2) {
-        // High density - green to yellow
-        particles[id].color = mix(vec3(0.0, 1.0, 0.0), vec3(1.0, 1.0, 0.0), (ratio - 1.0) * 5.0);
-    } else {
-        // Very high density - yellow to red
-        particles[id].color = mix(vec3(1.0, 1.0, 0.0), vec3(1.0, 0.0, 0.0), min((ratio - 1.2) * 5.0, 1.0));
-    }
 }
