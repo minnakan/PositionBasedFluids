@@ -1,0 +1,189 @@
+﻿#version 430 core
+
+layout(local_size_x = 256) in;
+
+struct Particle {
+    vec3 position;
+    float padding1;
+    vec3 velocity;
+    float padding2;
+    vec3 predictedPos;
+    float padding3;
+    vec3 color;
+    float padding4;
+    float density;
+    float lambda;
+    vec2 padding5;
+};
+
+layout(std140, binding = 0) uniform SimulationParams {
+    float dt;
+    float _pad0;
+    float _pad1;
+    float _pad2;
+
+    vec4 gravity;
+
+    float particleRadius;
+    float h;
+    float _pad3;
+    float _pad4;
+
+    vec4 minBoundary;
+    vec4 maxBoundary;
+
+    uint numParticles;
+    float cellSize;
+    uint maxParticlesPerCell;
+    float restDensity;
+};
+
+layout(std430, binding = 1) buffer ParticleBuffer {
+    Particle particles[];
+};
+
+layout(std430, binding = 2) buffer CellCounts {
+    uint cellCounts[];
+};
+
+layout(std430, binding = 3) buffer CellParticles {
+    uint cellParticles[];
+};
+
+// Poly6 kernel for density
+float W_Poly6(float r, float h) {
+    if(r > h) return 0.0;
+    float term = h*h - r*r;
+    return 315.0f / (64.0f * 3.14159f * pow(h, 9)) * term * term * term;
+}
+
+// Spiky kernel gradient for pressure forces
+vec3 gradW_Spiky(vec3 r, float rlen, float h) {
+    if(rlen > h || rlen < 0.0001) return vec3(0.0);
+    
+    // Explicitly calculate h^6
+    float h2 = h*h;
+    float h6 = h2*h2*h2;
+    
+    float factor = -45.0/(3.14159 * h6) * pow(h - rlen, 2);
+    return factor * r / max(rlen, 0.0001);
+}
+
+// Utility function to calculate cell index from position
+uint getCellIndex(vec3 position) {
+    ivec3 cellPos = ivec3(floor((position - minBoundary.xyz) / cellSize));
+    ivec3 gridDim = ivec3(ceil((maxBoundary.xyz - minBoundary.xyz) / cellSize));
+    cellPos = clamp(cellPos, ivec3(0), gridDim - ivec3(1));
+    return uint(cellPos.x + cellPos.y * gridDim.x + cellPos.z * gridDim.x * gridDim.y);
+}
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    if (id >= numParticles) return;
+    
+    // Get particle position
+    vec3 pos = particles[id].predictedPos;
+    
+    // Get cell position and grid dimensions
+    ivec3 cellPos = ivec3(floor((pos - minBoundary.xyz) / cellSize));
+    ivec3 gridDim = ivec3(ceil((maxBoundary.xyz - minBoundary.xyz) / cellSize));
+    
+    // Calculate density
+    float density = 0.0;
+    
+    // Self-contribution (when r=0)
+    density += W_Poly6(0.0, h);
+    
+    // Loop through neighboring cells (3x3x3 grid)
+    for (int x = -1; x <= 1; x++) {
+        for (int y = -1; y <= 1; y++) {
+            for (int z = -1; z <= 1; z++) {
+                ivec3 neighborCellPos = cellPos + ivec3(x, y, z);
+                
+                // Skip invalid cells
+                if (any(lessThan(neighborCellPos, ivec3(0))) || 
+                    any(greaterThanEqual(neighborCellPos, gridDim)))
+                    continue;
+                    
+                uint neighborCellIndex = getCellIndex(pos + vec3(x,y,z) * cellSize);
+                uint particlesInCell = cellCounts[neighborCellIndex];
+                
+                // Loop through particles in this cell
+                for (uint j = 0; j < particlesInCell && j < maxParticlesPerCell; j++) {
+                    uint neighborId = cellParticles[neighborCellIndex * maxParticlesPerCell + j];
+                    
+                    // Skip self
+                    if (neighborId == id) continue;
+                    
+                    vec3 neighborPos = particles[neighborId].predictedPos;
+                    vec3 diff = pos - neighborPos;
+                    float dist = length(diff);
+                    
+                    // Add density contribution
+                    if (dist < h) {
+                        density += W_Poly6(dist, h);
+                    }
+                }
+            }
+        }
+    }
+    
+    // Store calculated density
+    particles[id].density = density;
+    
+    // Calculate constraint value C_i (density/rest_density - 1)
+    float C = density/restDensity - 1.0;
+    
+    // Early exit if no pressure correction needed
+    if (C <= 0.0) {
+        particles[id].lambda = 0.0;
+        return;
+    }
+    
+    // Calculate gradient sum for lambda denominator
+    float gradientSum = 0.0;
+    
+    // Recalculate gradient sum using spiky kernel
+    for (int x = -1; x <= 1; x++) {
+        for (int y = -1; y <= 1; y++) {
+            for (int z = -1; z <= 1; z++) {
+                ivec3 neighborCellPos = cellPos + ivec3(x, y, z);
+                
+                // Skip invalid cells
+                if (any(lessThan(neighborCellPos, ivec3(0))) || 
+                    any(greaterThanEqual(neighborCellPos, gridDim)))
+                    continue;
+                    
+                uint neighborCellIndex = getCellIndex(pos + vec3(x,y,z) * cellSize);
+                uint particlesInCell = cellCounts[neighborCellIndex];
+                
+                // Process particles in this cell
+                for (uint j = 0; j < particlesInCell && j < maxParticlesPerCell; j++) {
+                    uint neighborId = cellParticles[neighborCellIndex * maxParticlesPerCell + j];
+                    
+                    // Process both self and neighbors
+                    vec3 neighborPos = particles[neighborId].predictedPos;
+                    vec3 diff = pos - neighborPos;
+                    float dist = length(diff);
+                    
+                    if (dist < h) {
+                        // Calculate gradient
+                        vec3 gradW = gradW_Spiky(diff, dist, h);
+                        
+                        // Add squared gradient magnitude to sum (divided by rest density)
+                        // This is the ∑_k |∇_pk C_i|^2 term in equation 11
+                        gradientSum += dot(gradW, gradW);
+                    }
+                }
+            }
+        }
+    }
+    
+    // Add small epsilon term for numerical stability (CFM)
+    float epsilon = 1e+05;
+    
+    // Calculate lambda according to equation 11
+    particles[id].lambda = -C / (gradientSum + epsilon);
+
+    particles[id].color = vec3(0.0f, 1.0f, 1.0f);
+}

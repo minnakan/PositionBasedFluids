@@ -1,9 +1,9 @@
-#include "PBFComputeSystem.h"
+﻿#include "PBFComputeSystem.h"
 #include <iostream>
 #include <iomanip>
 #include <sstream> // for better logs
 
-PBFComputeSystem::PBFComputeSystem(): externalForcesShader(nullptr), constructGridShader(nullptr), clearGridShader(nullptr),simParamsUBO(0),particleSSBO(0),numParticles(0),maxParticles(0)
+PBFComputeSystem::PBFComputeSystem(): externalForcesShader(nullptr), constructGridShader(nullptr), clearGridShader(nullptr), densityShader(nullptr), positionUpdateShader(nullptr), velocityUpdateShader(nullptr), simParamsUBO(0),particleSSBO(0),numParticles(0),maxParticles(0)
 {
 }
 
@@ -11,7 +11,7 @@ PBFComputeSystem::~PBFComputeSystem() {
     cleanup();
 }
 
-bool PBFComputeSystem::initialize(unsigned int maxParticles, float dt, const glm::vec4& gravity, float particleRadius, float smoothingLength, const glm::vec4& minBoundary, const glm::vec4& maxBoundary, float cellSize, unsigned int maxParticlesPerCell) {
+bool PBFComputeSystem::initialize(unsigned int maxParticles, float dt, const glm::vec4& gravity, float particleRadius, float smoothingLength, const glm::vec4& minBoundary, const glm::vec4& maxBoundary, float cellSize, unsigned int maxParticlesPerCell,float restDensity) {
     // Store the maximum number of particles
     this->maxParticles = maxParticles;
 
@@ -27,6 +27,15 @@ bool PBFComputeSystem::initialize(unsigned int maxParticles, float dt, const glm
 
         clearGridShader = new ComputeShader(RESOURCES_PATH"clear_grid.comp");
         std::cout << "[PBFComputeSystem] Clear grid shader loaded successfully (ID=" << constructGridShader->ID << ")\n";
+
+        densityShader = new ComputeShader(RESOURCES_PATH"calculate_density.comp");
+        std::cout << "[PBFComputeSystem] Density shader loaded successfully (ID=" << densityShader->ID << ")\n";
+
+        positionUpdateShader = new ComputeShader(RESOURCES_PATH"apply_position_update.comp");
+        std::cout << "[PBFComputeSystem] Position update shader loaded successfully (ID=" << positionUpdateShader->ID << ")\n";
+
+        velocityUpdateShader = new ComputeShader(RESOURCES_PATH"update_velocity.comp");
+        std::cout << "[PBFComputeSystem] Velocity update shader loaded successfully (ID=" << velocityUpdateShader->ID << ")\n";
     }
     catch (const std::exception& e) {
         std::cerr << "[PBFComputeSystem] Failed to load compute shader: "
@@ -48,6 +57,7 @@ bool PBFComputeSystem::initialize(unsigned int maxParticles, float dt, const glm
     params.maxBoundary = maxBoundary;
 	params.cellSize = cellSize;
 	params.maxParticlesPerCell = maxParticlesPerCell;
+    params.restDensity = restDensity;
 
     initializeGrid();
 
@@ -71,7 +81,7 @@ void PBFComputeSystem::createBuffers(unsigned int maxParticles) {
 }
 
 
-void PBFComputeSystem::updateSimulationParams(float dt,const glm::vec4& gravity,float particleRadius,float smoothingLength,const glm::vec4& minBoundary,const glm::vec4& maxBoundary, float cellSize, unsigned int maxParticlesPerCell) {
+void PBFComputeSystem::updateSimulationParams(float dt,const glm::vec4& gravity,float particleRadius,float smoothingLength,const glm::vec4& minBoundary,const glm::vec4& maxBoundary, float cellSize, unsigned int maxParticlesPerCell,float restDensity) {
     // Update local params struct
     params.dt = dt;
     params.gravity = gravity;
@@ -150,92 +160,84 @@ void PBFComputeSystem::downloadParticles(std::vector<Particle>& particles) {
 
     // Only log every 60 frames to avoid console spam
     if (frameCount % 60 == 0) {
-        // Calculate grid dimensions
-        glm::vec3 domain = params.maxBoundary - params.minBoundary;
-        glm::ivec3 gridDim = glm::ivec3(glm::ceil(domain / params.cellSize));
-        int totalCells = gridDim.x * gridDim.y * gridDim.z;
+        // Download all particle data to analyze density and lambda
+        std::vector<Particle> particleData(numParticles);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, particleSSBO);
+        glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, numParticles * sizeof(Particle), particleData.data());
 
-        // Download cell counts
-        std::vector<GLuint> cellCounts(totalCells);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellCountsBuffer);
-        glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, totalCells * sizeof(GLuint), cellCounts.data());
+        // Analyze density statistics
+        float minDensity = std::numeric_limits<float>::max();
+        float maxDensity = 0.0f;
+        float totalDensity = 0.0f;
+        int particlesOverRestDensity = 0;
 
-        // Analyze cell statistics
-        GLuint maxCount = 0;
-        GLuint totalFilledCells = 0;
-        GLuint totalParticlesInCells = 0;
-        GLuint cellsExceedingLimit = 0;
+        // Analyze lambda statistics
+        float minLambdaAbs = std::numeric_limits<float>::max();
+        float maxLambdaAbs = 0.0f;
+        float totalLambdaAbs = 0.0f;
 
-        for (int i = 0; i < totalCells; i++) {
-            if (cellCounts[i] > 0) {
-                totalFilledCells++;
-                totalParticlesInCells += cellCounts[i];
-                maxCount = std::max(maxCount, cellCounts[i]);
+        for (int i = 0; i < numParticles; i++) {
+            // Density statistics
+            float density = particleData[i].density;
+            minDensity = std::min(minDensity, density);
+            maxDensity = std::max(maxDensity, density);
+            totalDensity += density;
 
-                if (cellCounts[i] > params.maxParticlesPerCell) {
-                    cellsExceedingLimit++;
-                }
+            if (density > params.restDensity) {
+                particlesOverRestDensity++;
             }
+
+            // Lambda statistics (using absolute value since lambda is typically negative)
+            float lambdaAbs = std::abs(particleData[i].lambda);
+            minLambdaAbs = std::min(minLambdaAbs, lambdaAbs);
+            maxLambdaAbs = std::max(maxLambdaAbs, lambdaAbs);
+            totalLambdaAbs += lambdaAbs;
         }
 
-        float avgParticlesPerFilledCell = totalFilledCells > 0 ?
-            static_cast<float>(totalParticlesInCells) / totalFilledCells : 0.0f;
+        float avgDensity = totalDensity / numParticles;
+        float percentOverRestDensity = (particlesOverRestDensity * 100.0f) / numParticles;
+        float avgLambdaAbs = totalLambdaAbs / numParticles;
 
-        std::cout << "===== Cell Statistics (Frame " << frameCount << ") =====\n";
-        std::cout << "Total cells: " << totalCells << "\n";
-        std::cout << "Filled cells: " << totalFilledCells << " ("
-            << (totalFilledCells * 100.0f / totalCells) << "%)\n";
-        std::cout << "Max particles in a cell: " << maxCount << "\n";
-        std::cout << "Avg particles per filled cell: " << avgParticlesPerFilledCell << "\n";
+        std::cout << "===== Fluid Statistics (Frame " << frameCount << ") =====\n";
+        std::cout << "Density (rest density = " << params.restDensity << "):\n";
+        std::cout << "  Min:   " << minDensity << "\n";
+        std::cout << "  Max:   " << maxDensity << "\n";
+        std::cout << "  Avg:   " << avgDensity << "\n";
+        std::cout << "  % Over Rest: " << percentOverRestDensity << "% (" << particlesOverRestDensity << " particles)\n";
 
-        if (cellsExceedingLimit > 0) {
-            std::cout << "WARNING: " << cellsExceedingLimit << " cells exceed max particles limit of "
-                << params.maxParticlesPerCell << "!\n";
-        }
+        std::cout << "Lambda (constraint multiplier):\n";
+        std::cout << "  Min |λ|: " << minLambdaAbs << "\n";
+        std::cout << "  Max |λ|: " << maxLambdaAbs << "\n";
+        std::cout << "  Avg |λ|: " << avgLambdaAbs << "\n";
 
-        // Find and print the 5 most populated cells without sorting
-        std::cout << "Top 5 most populated cells:\n";
-
-        // Just do a simple search for the top 5 cells
+        // Find the 5 particles with highest density
+        std::cout << "Top 5 highest density particles:\n";
         for (int topN = 0; topN < 5; topN++) {
             int maxIndex = -1;
-            GLuint maxValue = 0;
+            float maxValue = 0.0f;
 
-            // Find the next highest value
-            for (int i = 0; i < totalCells; i++) {
-                if (cellCounts[i] > maxValue) {
-                    bool alreadyFound = false;
-
-                    // Check if we've already printed this cell
-                    for (int j = 0; j < topN; j++) {
-                        // We would need to store previous maxIndices
-                        // This is a simplified version that just finds the highest
-                        // and prints it multiple times for illustration
-                    }
-
-                    if (!alreadyFound) {
-                        maxIndex = i;
-                        maxValue = cellCounts[i];
-                    }
+            // Find the next highest density
+            for (int i = 0; i < numParticles; i++) {
+                if (particleData[i].density > maxValue) {
+                    maxIndex = i;
+                    maxValue = particleData[i].density;
                 }
             }
 
             if (maxIndex >= 0) {
-                // Convert 1D index back to 3D coordinates
-                int z = maxIndex / (gridDim.x * gridDim.y);
-                int remainder = maxIndex - z * gridDim.x * gridDim.y;
-                int y = remainder / gridDim.x;
-                int x = remainder % gridDim.x;
+                glm::vec3 pos = particleData[maxIndex].position;
+                std::cout << "  Particle " << maxIndex << " at ["
+                    << pos.x << ", " << pos.y << ", " << pos.z << "]: "
+                    << "density = " << maxValue
+                    << ", lambda = " << particleData[maxIndex].lambda << "\n";
 
-                std::cout << "  Cell [" << x << "," << y << "," << z << "] (index "
-                    << maxIndex << "): " << maxValue << " particles\n";
-
-                // Zero out this max so we find the next one
-                cellCounts[maxIndex] = 0;
+                // Zero out this particle's density so we find the next highest
+                particleData[maxIndex].density = 0.0f;
             }
         }
 
         std::cout << "=======================================\n";
+
     }
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
@@ -247,11 +249,17 @@ void PBFComputeSystem::step() {
         return;
     }
 
-    
-
     applyExternalForces();
 
     findNeighbors();
+
+    const int solverIterations = 5;
+    for (int iter = 0; iter < solverIterations; iter++) {
+        calculateDensity();
+        applyPositionUpdate();
+    }
+
+    updateVelocity();
 }
 
 void PBFComputeSystem::applyExternalForces() {
@@ -351,6 +359,88 @@ void PBFComputeSystem::findNeighbors() {
     // Final memory barrier to ensure all writes have completed
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 }
+
+void PBFComputeSystem::calculateDensity() {
+    if (numParticles == 0) {
+        std::cerr << "[PBFComputeSystem] Warning: calculateDensity called with zero particles\n";
+        return;
+    }
+
+    // Calculate # of work groups
+    unsigned int numGroups = (numParticles + 255) / 256;
+    if (numGroups == 0) numGroups = 1;
+
+    // Ensure simulation params are up to date
+    glBindBuffer(GL_UNIFORM_BUFFER, simParamsUBO);
+    glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(SimParams), &params);
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+    // Activate the density compute shader
+    densityShader->use();
+
+    // Bind buffers
+    glBindBufferBase(GL_UNIFORM_BUFFER, 0, simParamsUBO);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, particleSSBO);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, cellCountsBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, cellParticlesBuffer);
+
+    // Dispatch compute shader
+    glDispatchCompute(numGroups, 1, 1);
+
+    // Memory barrier to ensure compute shader has completed
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+}
+
+void PBFComputeSystem::applyPositionUpdate() {
+    // Calculate # of work groups
+    unsigned int numGroups = (numParticles + 255) / 256;
+    if (numGroups == 0) numGroups = 1;
+
+    // Ensure simulation params are up to date
+    glBindBuffer(GL_UNIFORM_BUFFER, simParamsUBO);
+    glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(SimParams), &params);
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+    // Activate the position update compute shader
+    positionUpdateShader->use();
+
+    // Bind buffers
+    glBindBufferBase(GL_UNIFORM_BUFFER, 0, simParamsUBO);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, particleSSBO);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, cellCountsBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, cellParticlesBuffer);
+
+    // Dispatch compute shader
+    glDispatchCompute(numGroups, 1, 1);
+
+    // Memory barrier to ensure compute shader has completed
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+}
+
+void PBFComputeSystem::updateVelocity() {
+    // Calculate # of work groups
+    unsigned int numGroups = (numParticles + 255) / 256;
+    if (numGroups == 0) numGroups = 1;
+
+    // Ensure simulation params are up to date
+    glBindBuffer(GL_UNIFORM_BUFFER, simParamsUBO);
+    glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(SimParams), &params);
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+    // Activate the velocity update compute shader
+    velocityUpdateShader->use();
+
+    // Bind buffers
+    glBindBufferBase(GL_UNIFORM_BUFFER, 0, simParamsUBO);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, particleSSBO);
+
+    // Dispatch compute shader
+    glDispatchCompute(numGroups, 1, 1);
+
+    // Memory barrier to ensure compute shader has completed
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+}
+
 
 bool PBFComputeSystem::checkComputeShaderSupport() {
     GLint maxComputeWorkGroupCount[3] = { 0 };
@@ -455,6 +545,15 @@ void PBFComputeSystem::cleanup() {
 
     delete clearGridShader;
     clearGridShader = nullptr;
+
+    delete densityShader;
+    densityShader = nullptr;
+
+    delete positionUpdateShader;
+    positionUpdateShader = nullptr;
+    
+    delete velocityUpdateShader;
+    velocityUpdateShader = nullptr;
 
     // Delete existing GPU buffers
     if (simParamsUBO) glDeleteBuffers(1, &simParamsUBO);

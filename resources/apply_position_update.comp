@@ -1,0 +1,197 @@
+﻿#version 430 core
+
+layout(local_size_x = 256) in;
+
+struct Particle {
+    vec3 position;
+    float padding1;
+    vec3 velocity;
+    float padding2;
+    vec3 predictedPos;
+    float padding3;
+    vec3 color;
+    float padding4;
+    float density;
+    float lambda;
+    vec2 padding5;
+};
+
+layout(std140, binding = 0) uniform SimulationParams {
+    float dt;
+    float _pad0;
+    float _pad1;
+    float _pad2;
+
+    vec4 gravity;
+
+    float particleRadius;
+    float h;
+    float _pad3;
+    float _pad4;
+
+    vec4 minBoundary;
+    vec4 maxBoundary;
+
+    uint numParticles;
+    float cellSize;
+    uint maxParticlesPerCell;
+    float restDensity;
+};
+
+layout(std430, binding = 1) buffer ParticleBuffer {
+    Particle particles[];
+};
+
+layout(std430, binding = 2) buffer CellCounts {
+    uint cellCounts[];
+};
+
+layout(std430, binding = 3) buffer CellParticles {
+    uint cellParticles[];
+};
+
+// Spiky kernel gradient for pressure forces
+vec3 gradW_Spiky(vec3 r, float rlen, float h) {
+    if(rlen > h || rlen < 0.0001) return vec3(0.0);
+    
+    float h2 = h*h;
+    float h6 = h2*h2*h2;
+    
+    float factor = -45.0/(3.14159 * h6) * pow(h - rlen, 2);
+    return factor * r / max(rlen, 0.0001);
+}
+
+// Poly6 kernel for artificial pressure term
+float W_Poly6(float r, float h) {
+    if(r > h) return 0.0;
+    float term = h*h - r*r;
+    return 315.0f / (64.0f * 3.14159f * pow(h, 9)) * term * term * term;
+}
+
+// Utility function to calculate cell index from position
+uint getCellIndex(vec3 position) {
+    ivec3 cellPos = ivec3(floor((position - minBoundary.xyz) / cellSize));
+    ivec3 gridDim = ivec3(ceil((maxBoundary.xyz - minBoundary.xyz) / cellSize));
+    cellPos = clamp(cellPos, ivec3(0), gridDim - ivec3(1));
+    return uint(cellPos.x + cellPos.y * gridDim.x + cellPos.z * gridDim.x * gridDim.y);
+}
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    if (id >= numParticles) return;
+    
+    // Get particle position
+    vec3 pos = particles[id].predictedPos;
+    
+    // Get cell position and grid dimensions
+    ivec3 cellPos = ivec3(floor((pos - minBoundary.xyz) / cellSize));
+    ivec3 gridDim = ivec3(ceil((maxBoundary.xyz - minBoundary.xyz) / cellSize));
+    
+    // Initialize position change
+    vec3 deltaPos = vec3(0.0);
+    
+    // Loop through neighboring cells (3x3x3 grid)
+    for (int x = -1; x <= 1; x++) {
+        for (int y = -1; y <= 1; y++) {
+            for (int z = -1; z <= 1; z++) {
+                ivec3 neighborCellPos = cellPos + ivec3(x, y, z);
+                
+                // Skip invalid cells
+                if (any(lessThan(neighborCellPos, ivec3(0))) || 
+                    any(greaterThanEqual(neighborCellPos, gridDim)))
+                    continue;
+                    
+                uint neighborCellIndex = getCellIndex(pos + vec3(x,y,z) * cellSize);
+                uint particlesInCell = cellCounts[neighborCellIndex];
+                
+                // Loop through particles in this cell
+                for (uint j = 0; j < particlesInCell && j < maxParticlesPerCell; j++) {
+                    uint neighborId = cellParticles[neighborCellIndex * maxParticlesPerCell + j];
+                    
+                    // Skip self
+                    if (neighborId == id) continue;
+                    
+                    vec3 neighborPos = particles[neighborId].predictedPos;
+                    vec3 diff = pos - neighborPos;
+                    float dist = length(diff);
+                    
+                    // Process particles within kernel radius
+                    if (dist < h) {
+                        // Calculate position correction from equation 12
+                        
+                        // Calculate gradient of Spiky kernel
+                        vec3 gradW = gradW_Spiky(diff, dist, h);
+                        
+                        // Get lambda values from both particles
+                        float lambdaSum = particles[id].lambda + particles[neighborId].lambda;
+                        
+                        // Calculate artificial pressure term (s_corr) from equation 13
+                        // Parameters from the paper: k = 0.1, n = 4, ∆q = 0.3h
+                        float k = 0.1;
+                        float n = 4.0;
+                        float deltaq = 0.3 * h;
+                        
+                        float wij = W_Poly6(dist, h);
+                        float wdeltaq = W_Poly6(deltaq, h);
+                        
+                        float scorr = -k * pow(wij / wdeltaq, n);
+                        
+                        // Calculate particle position correction
+                        // ∆p_i = (1/ρ_0) ∑_j (λ_i + λ_j + s_corr) ∇W(p_i - p_j, h)
+                        deltaPos += (lambdaSum + scorr) * gradW;
+                    }
+                }
+            }
+        }
+    }
+    
+    // Scale by 1/restDensity
+    deltaPos /= restDensity;
+    
+    // Apply position correction
+    particles[id].predictedPos += deltaPos;
+    
+    // Boundary collision handling
+    // Floor constraint with slight bounce effect
+    if (particles[id].predictedPos.y < minBoundary.y + particleRadius) {
+        // Push the particle outside the boundary
+        particles[id].predictedPos.y = minBoundary.y + particleRadius;
+        
+        // Add slight upward force for realism (optional)
+        // This creates a tiny bounce effect to prevent stacking
+        particles[id].predictedPos.y += 0.001 * h;
+    }
+    
+    // X-axis boundaries (left and right walls)
+    if (particles[id].predictedPos.x < minBoundary.x + particleRadius) {
+        particles[id].predictedPos.x = minBoundary.x + particleRadius;
+        // Push slightly away from wall
+        particles[id].predictedPos.x += 0.001 * h;
+    }
+    if (particles[id].predictedPos.x > maxBoundary.x - particleRadius) {
+        particles[id].predictedPos.x = maxBoundary.x - particleRadius;
+        // Push slightly away from wall
+        particles[id].predictedPos.x -= 0.001 * h;
+    }
+    
+    // Z-axis boundaries (front and back walls)
+    if (particles[id].predictedPos.z < minBoundary.z + particleRadius) {
+        particles[id].predictedPos.z = minBoundary.z + particleRadius;
+        // Push slightly away from wall
+        particles[id].predictedPos.z += 0.001 * h;
+    }
+    if (particles[id].predictedPos.z > maxBoundary.z - particleRadius) {
+        particles[id].predictedPos.z = maxBoundary.z - particleRadius;
+        // Push slightly away from wall
+        particles[id].predictedPos.z -= 0.001 * h;
+    }
+    
+    // Update color based on position change magnitude (for visualization)
+    float deltaMag = length(deltaPos);
+    
+    // Visual feedback: color gradient from blue to red based on position correction magnitude
+    if (deltaMag > 0.0) {
+        float normalizedDelta = min(deltaMag * 10.0, 1.0); // Scale for better visualization
+        particles[id].color = mix(vec3(0.0, 0.0, 1.0), vec3(1.0, 0.0, 0.0), normalizedDelta);
+    }
+}

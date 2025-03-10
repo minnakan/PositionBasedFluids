@@ -16,6 +16,7 @@ public:
     glm::vec4 maxBoundary;
     float cellSize;
     unsigned int maxParticlesPerCell;
+    float restDensity;
     bool enableDebugInfo;
 
     // Public particle data for rendering

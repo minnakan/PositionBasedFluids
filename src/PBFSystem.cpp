@@ -11,11 +11,13 @@ PBFSystem::PBFSystem()
     particleRadius = 0.1f;
     h = particleRadius * 2.0f;  // Smoothing length
 
-    minBoundary = glm::vec4(-10.0f, 0.0f, -5.0f, 0.0f);
-    maxBoundary = glm::vec4(10.0f, 10.0f, 5.0f, 0.0f);
+    minBoundary = glm::vec4(-2.5f, 0.0f, -5.0f, 0.0f);
+    maxBoundary = glm::vec4(2.5f, 5.0f, 5.0f, 0.0f);
 
 	cellSize = 0.2f;
 	maxParticlesPerCell = 1024;
+
+    restDensity = 1000.0f;
 
     computeSystem = nullptr;
     computeSystemInitialized = false;
@@ -145,7 +147,7 @@ void PBFSystem::step()
     }
 
     // Update simulation parameters in GPU
-    computeSystem->updateSimulationParams(dt, gravity, particleRadius, h, minBoundary, maxBoundary,cellSize,maxParticlesPerCell);
+    computeSystem->updateSimulationParams(dt, gravity, particleRadius, h, minBoundary, maxBoundary,cellSize,maxParticlesPerCell,restDensity);
     // Run GPU step
     computeSystem->step();
 
@@ -161,12 +163,12 @@ void PBFSystem::initializeComputeSystem()
 
     // Some max capacity
     const unsigned int MAX_PARTICLES = 1000000;
-    bool success = computeSystem->initialize(MAX_PARTICLES,dt,gravity,particleRadius,h,minBoundary,maxBoundary,cellSize,maxParticlesPerCell);
+    bool success = computeSystem->initialize(MAX_PARTICLES,dt,gravity,particleRadius,h,minBoundary,maxBoundary,cellSize,maxParticlesPerCell,restDensity);
 
     if (success) {
         computeSystemInitialized = true;
         std::cout << "[PBFSystem] GPU compute system initialized\n";
-        computeSystem->updateSimulationParams(dt, gravity, particleRadius, h, minBoundary, maxBoundary, cellSize, maxParticlesPerCell);
+        computeSystem->updateSimulationParams(dt, gravity, particleRadius, h, minBoundary, maxBoundary, cellSize, maxParticlesPerCell,restDensity);
     }
     else {
         std::cerr << "[PBFSystem] Failed to initialize GPU compute system\n";

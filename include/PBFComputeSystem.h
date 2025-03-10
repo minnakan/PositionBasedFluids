@@ -15,6 +15,9 @@ struct Particle {
     float padding3;      // 44-47 bytes
     glm::vec3 color;     // 48-59 bytes
     float padding4;      // 60-63 bytes
+    float density;       
+    float lambda;        
+    glm::vec2 padding5;
 };
 
 // This struct must match the layout in your compute shader
@@ -42,7 +45,7 @@ struct SimParams {
     unsigned int numParticles;
     float cellSize;
     unsigned int maxParticlesPerCell;
-    float _pad5;
+    float restDensity;
 };
 
 class PBFComputeSystem {
@@ -50,7 +53,7 @@ public:
     PBFComputeSystem();
     ~PBFComputeSystem();
 
-    bool initialize(unsigned int maxParticles, float dt, const glm::vec4& gravity, float particleRadius, float smoothingLength, const glm::vec4& minBoundary, const glm::vec4& maxBoundary, float cellSize,unsigned int maxParticlesPerCell);
+    bool initialize(unsigned int maxParticles, float dt, const glm::vec4& gravity, float particleRadius, float smoothingLength, const glm::vec4& minBoundary, const glm::vec4& maxBoundary, float cellSize,unsigned int maxParticlesPerCell,float restDensity);
     void uploadParticles(const std::vector<Particle>& particles);
     void downloadParticles(std::vector<Particle>& particles);
     void step();
@@ -59,8 +62,12 @@ public:
 
     void applyExternalForces();
     void findNeighbors();
+	void calculateDensity();
+    void applyPositionUpdate();
+    void updateVelocity();
 
-    void updateSimulationParams(float dt,const glm::vec4& gravity,float particleRadius,float smoothingLength,const glm::vec4& minBoundary,const glm::vec4& maxBoundary, float cellSize, unsigned int maxParticlesPerCell);
+
+    void updateSimulationParams(float dt,const glm::vec4& gravity,float particleRadius,float smoothingLength,const glm::vec4& minBoundary,const glm::vec4& maxBoundary, float cellSize, unsigned int maxParticlesPerCell, float restDensity);
 
 private:
     void createBuffers(unsigned int maxParticles);
@@ -72,6 +79,10 @@ private:
     ComputeShader* externalForcesShader;
     ComputeShader* constructGridShader;
     ComputeShader* clearGridShader;
+    ComputeShader* densityShader;
+    ComputeShader* positionUpdateShader;
+    ComputeShader* velocityUpdateShader;
+
     GLuint simParamsUBO;
     GLuint particleSSBO;
     GLuint cellCountsBuffer; // Stores count of particles per cell

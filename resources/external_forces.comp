@@ -11,6 +11,9 @@ struct Particle {
     float padding3;
     vec3 color;
     float padding4;
+    float density;
+    float lambda;
+    vec2 padding5;
 };
 
 layout(std140, binding = 0) uniform SimulationParams {
@@ -41,7 +44,7 @@ layout(std140, binding = 0) uniform SimulationParams {
     uint  numParticles;         // offset 80..83
     float cellSize;             // offset 84..87
     uint  maxParticlesPerCell;  // offset 88..91
-    float _pad5;                // offset 92..95
+    float restDensity;                // offset 92..95
     // Next offset = 96
 };
 
@@ -56,8 +59,10 @@ void main() {
     particles[id].velocity += gravity.xyz * dt;
     
     // Update position based on velocity
-    particles[id].position += particles[id].velocity * dt;
+    //particles[id].position += particles[id].velocity * dt;
+    particles[id].predictedPos += particles[id].velocity * dt;
     
+    /*
     // Floor constraint with bounce effect
     if (particles[id].position.y < minBoundary.y + particleRadius) {
         particles[id].position.y = minBoundary.y + particleRadius;
@@ -83,9 +88,9 @@ void main() {
         particles[id].position.z = maxBoundary.z - particleRadius;
         particles[id].velocity.z = -particles[id].velocity.z * 0.3;
     }
-    
+    */
     // Predict position for next step (constraint solving)
-    particles[id].predictedPos = particles[id].position;
+    //particles[id].predictedPos = particles[id].position;
     
     // Keep the visualization code
     //particles[id].color = vec3(1.0f, 1.0f, 0.0);
