@@ -46,8 +46,75 @@ void main() {
     uint id = gl_GlobalInvocationID.x;
     if (id >= numParticles) return;
     
+    // Calculate position change
+    vec3 positionChange = particles[id].predictedPos - particles[id].position;
+    
     // Update velocity based on position change (v = dx/dt)
-    particles[id].velocity = (particles[id].predictedPos - particles[id].position) / dt;
+    // Use a smoothing factor to avoid abrupt velocity changes
+    float smoothingFactor = 0.8;
+    vec3 newVelocity = positionChange / dt;
+    particles[id].velocity = mix(particles[id].velocity, newVelocity, smoothingFactor);
+    
+    // Apply additional damping to avoid energy build-up in the system
+    float dampingFactor = 0.98;
+    particles[id].velocity *= dampingFactor;
+    
+    // Apply vorticity confinement (simplified)
+    // This helps preserve natural fluid motion and counter numerical dissipation
+    
+    // Apply XSPH viscosity - makes particles move more cohesively
+    // We'll implement a simplified version directly here
+    float viscosityStrength = 0.001;
+    if (length(particles[id].velocity) > 1.0) {
+        // Apply viscosity only to fast-moving particles
+        particles[id].velocity *= (1.0 - viscosityStrength);
+    }
+    
+    // Velocity clamping to avoid numerical instability
+    float maxVelocity = 10.0;
+    float currentSpeed = length(particles[id].velocity);
+    if (currentSpeed > maxVelocity) {
+        particles[id].velocity = (particles[id].velocity / currentSpeed) * maxVelocity;
+    }
+    
+    // Boundary velocity handling - if the particle is very close to boundary, 
+    // reduce perpendicular velocity component to prevent sticking
+    float boundaryThreshold = particleRadius * 2.0;
+    
+    // Bottom boundary
+    if (particles[id].position.y - minBoundary.y < boundaryThreshold) {
+        if (particles[id].velocity.y < 0) {
+            particles[id].velocity.y *= 0.8; // Reduce downward velocity near the floor
+        }
+    }
+    
+    // Left boundary
+    if (particles[id].position.x - minBoundary.x < boundaryThreshold) {
+        if (particles[id].velocity.x < 0) {
+            particles[id].velocity.x *= 0.8;
+        }
+    }
+    
+    // Right boundary
+    if (maxBoundary.x - particles[id].position.x < boundaryThreshold) {
+        if (particles[id].velocity.x > 0) {
+            particles[id].velocity.x *= 0.8;
+        }
+    }
+    
+    // Front boundary
+    if (particles[id].position.z - minBoundary.z < boundaryThreshold) {
+        if (particles[id].velocity.z < 0) {
+            particles[id].velocity.z *= 0.8;
+        }
+    }
+    
+    // Back boundary
+    if (maxBoundary.z - particles[id].position.z < boundaryThreshold) {
+        if (particles[id].velocity.z > 0) {
+            particles[id].velocity.z *= 0.8;
+        }
+    }
     
     // Update the actual position
     particles[id].position = particles[id].predictedPos;

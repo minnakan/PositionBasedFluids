@@ -253,10 +253,16 @@ void PBFComputeSystem::step() {
 
     findNeighbors();
 
-    const int solverIterations = 5;
+    const int solverIterations = 30;
     for (int iter = 0; iter < solverIterations; iter++) {
         calculateDensity();
         applyPositionUpdate();
+
+		findNeighbors();
+
+        /*if (iter < solverIterations - 1 && iter % 2 == 0) {
+            findNeighbors();
+        }*/
     }
 
     updateVelocity();

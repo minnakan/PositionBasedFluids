@@ -71,7 +71,6 @@ void main() {
     uint id = gl_GlobalInvocationID.x;
     if (id >= numParticles) return;
     
-    
     // Ensure counters are reset before proceeding
     memoryBarrierBuffer();
     barrier();
@@ -86,6 +85,7 @@ void main() {
     if (insertIndex < maxParticlesPerCell) {
         cellParticles[cellIdx * maxParticlesPerCell + insertIndex] = id;
     }
-
-    particles[id].color = vec3(1.0f, 1.0f, 0.0);
+    
+    // REMOVED: particle color override
+    // This was causing all particles to be yellow regardless of density/position
 }

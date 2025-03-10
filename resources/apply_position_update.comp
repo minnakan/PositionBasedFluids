@@ -76,6 +76,50 @@ uint getCellIndex(vec3 position) {
     return uint(cellPos.x + cellPos.y * gridDim.x + cellPos.z * gridDim.x * gridDim.y);
 }
 
+// Improved wall repulsion function
+vec3 calculateWallRepulsion(vec3 pos) {
+    vec3 repulsion = vec3(0.0);
+    float wallRepulsionStrength = 1.0; // Reduced strength to avoid excessive forces
+    float maxInfluenceDistance = 1.5 * particleRadius; // Tighter influence zone
+    
+    // Floor repulsion
+    float distToFloor = pos.y - (minBoundary.y + particleRadius);
+    if (distToFloor < maxInfluenceDistance) {
+        float repulsionForce = (1.0 - distToFloor/maxInfluenceDistance) * wallRepulsionStrength;
+        repulsion.y += repulsionForce;
+    }
+    
+    // Left wall repulsion
+    float distToLeftWall = pos.x - (minBoundary.x + particleRadius);
+    if (distToLeftWall < maxInfluenceDistance) {
+        float repulsionForce = (1.0 - distToLeftWall/maxInfluenceDistance) * wallRepulsionStrength;
+        repulsion.x += repulsionForce;
+    }
+    
+    // Right wall repulsion
+    float distToRightWall = (maxBoundary.x - particleRadius) - pos.x;
+    if (distToRightWall < maxInfluenceDistance) {
+        float repulsionForce = (1.0 - distToRightWall/maxInfluenceDistance) * wallRepulsionStrength;
+        repulsion.x -= repulsionForce;
+    }
+    
+    // Front wall repulsion
+    float distToFrontWall = pos.z - (minBoundary.z + particleRadius);
+    if (distToFrontWall < maxInfluenceDistance) {
+        float repulsionForce = (1.0 - distToFrontWall/maxInfluenceDistance) * wallRepulsionStrength;
+        repulsion.z += repulsionForce;
+    }
+    
+    // Back wall repulsion
+    float distToBackWall = (maxBoundary.z - particleRadius) - pos.z;
+    if (distToBackWall < maxInfluenceDistance) {
+        float repulsionForce = (1.0 - distToBackWall/maxInfluenceDistance) * wallRepulsionStrength;
+        repulsion.z -= repulsionForce;
+    }
+    
+    return repulsion;
+}
+
 void main() {
     uint id = gl_GlobalInvocationID.x;
     if (id >= numParticles) return;
@@ -116,9 +160,7 @@ void main() {
                     float dist = length(diff);
                     
                     // Process particles within kernel radius
-                    if (dist < h) {
-                        // Calculate position correction from equation 12
-                        
+                    if (dist < h && dist > 0.0001) {
                         // Calculate gradient of Spiky kernel
                         vec3 gradW = gradW_Spiky(diff, dist, h);
                         
@@ -126,19 +168,20 @@ void main() {
                         float lambdaSum = particles[id].lambda + particles[neighborId].lambda;
                         
                         // Calculate artificial pressure term (s_corr) from equation 13
-                        // Parameters from the paper: k = 0.1, n = 4, ∆q = 0.3h
-                        float k = 0.1;
-                        float n = 4.0;
-                        float deltaq = 0.3 * h;
+                        float k = 0.2;      // Reduced from 0.2 to lower artificial pressure
+                        float n = 4.0;      // Power parameter
+                        float deltaq = 0.2 * h;  // Target sampling distance
                         
                         float wij = W_Poly6(dist, h);
                         float wdeltaq = W_Poly6(deltaq, h);
                         
-                        float scorr = -k * pow(wij / wdeltaq, n);
-                        
-                        // Calculate particle position correction
-                        // ∆p_i = (1/ρ_0) ∑_j (λ_i + λ_j + s_corr) ∇W(p_i - p_j, h)
-                        deltaPos += (lambdaSum + scorr) * gradW;
+                        // Prevent division by zero
+                        if (wdeltaq > 0.0) {
+                            float scorr = -k * pow(wij / wdeltaq, n);
+                            
+                            // Calculate particle position correction
+                            deltaPos += (lambdaSum + scorr) * gradW;
+                        }
                     }
                 }
             }
@@ -148,42 +191,35 @@ void main() {
     // Scale by 1/restDensity
     deltaPos /= restDensity;
     
+    // Add wall repulsion forces with reduced effect
+    vec3 wallRepulsion = calculateWallRepulsion(pos);
+    deltaPos += wallRepulsion * 0.005; // Significantly reduced scale factor
+    
     // Apply position correction
     particles[id].predictedPos += deltaPos;
     
-    // Boundary collision handling
-    // Floor constraint with slight bounce effect
+    // Apply boundary constraints more firmly (hard constraints)
+    float safetyMargin = 0.1 * particleRadius;
+    
+    // Floor constraint - more definitive
     if (particles[id].predictedPos.y < minBoundary.y + particleRadius) {
-        // Push the particle outside the boundary
-        particles[id].predictedPos.y = minBoundary.y + particleRadius;
-        
-        // Add slight upward force for realism (optional)
-        // This creates a tiny bounce effect to prevent stacking
-        particles[id].predictedPos.y += 0.001 * h;
+        particles[id].predictedPos.y = minBoundary.y + particleRadius + safetyMargin;
     }
     
     // X-axis boundaries (left and right walls)
     if (particles[id].predictedPos.x < minBoundary.x + particleRadius) {
-        particles[id].predictedPos.x = minBoundary.x + particleRadius;
-        // Push slightly away from wall
-        particles[id].predictedPos.x += 0.001 * h;
+        particles[id].predictedPos.x = minBoundary.x + particleRadius + safetyMargin;
     }
     if (particles[id].predictedPos.x > maxBoundary.x - particleRadius) {
-        particles[id].predictedPos.x = maxBoundary.x - particleRadius;
-        // Push slightly away from wall
-        particles[id].predictedPos.x -= 0.001 * h;
+        particles[id].predictedPos.x = maxBoundary.x - particleRadius - safetyMargin;
     }
     
     // Z-axis boundaries (front and back walls)
     if (particles[id].predictedPos.z < minBoundary.z + particleRadius) {
-        particles[id].predictedPos.z = minBoundary.z + particleRadius;
-        // Push slightly away from wall
-        particles[id].predictedPos.z += 0.001 * h;
+        particles[id].predictedPos.z = minBoundary.z + particleRadius + safetyMargin;
     }
     if (particles[id].predictedPos.z > maxBoundary.z - particleRadius) {
-        particles[id].predictedPos.z = maxBoundary.z - particleRadius;
-        // Push slightly away from wall
-        particles[id].predictedPos.z -= 0.001 * h;
+        particles[id].predictedPos.z = maxBoundary.z - particleRadius - safetyMargin;
     }
     
     // Update color based on position change magnitude (for visualization)
@@ -191,7 +227,7 @@ void main() {
     
     // Visual feedback: color gradient from blue to red based on position correction magnitude
     if (deltaMag > 0.0) {
-        float normalizedDelta = min(deltaMag * 10.0, 1.0); // Scale for better visualization
-        particles[id].color = mix(vec3(0.0, 0.0, 1.0), vec3(1.0, 0.0, 0.0), normalizedDelta);
+        float normalizedDelta = min(deltaMag * 50.0, 1.0);
+        //particles[id].color = mix(vec3(0.0, 0.0, 1.0), vec3(1.0, 0.0, 0.0), normalizedDelta);
     }
 }

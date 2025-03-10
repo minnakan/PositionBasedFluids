@@ -77,6 +77,73 @@ uint getCellIndex(vec3 position) {
     return uint(cellPos.x + cellPos.y * gridDim.x + cellPos.z * gridDim.x * gridDim.y);
 }
 
+// Add virtual boundary particles contribution
+float calculateBoundaryDensity(vec3 pos) {
+    float boundaryDensity = 0.0;
+    float boundaryParticleDistance = particleRadius * 0.5;
+    float boundaryParticleInfluence = 0.5; // Reduced from default to avoid over-influence
+    
+    // Check distance to boundaries and add virtual particles contribution
+    
+    // Floor (bottom) boundary
+    float distToBottom = pos.y - minBoundary.y;
+    if(distToBottom < h) {
+        // Add contribution from virtual particles below
+        for(float offset = boundaryParticleDistance; offset < h; offset += boundaryParticleDistance) {
+            if(distToBottom - offset > 0) {
+                float r = offset;
+                boundaryDensity += boundaryParticleInfluence * W_Poly6(r, h);
+            }
+        }
+    }
+    
+    // Left wall boundary
+    float distToLeft = pos.x - minBoundary.x;
+    if(distToLeft < h) {
+        for(float offset = boundaryParticleDistance; offset < h; offset += boundaryParticleDistance) {
+            if(distToLeft - offset > 0) {
+                float r = offset;
+                boundaryDensity += boundaryParticleInfluence * W_Poly6(r, h);
+            }
+        }
+    }
+    
+    // Right wall boundary
+    float distToRight = maxBoundary.x - pos.x;
+    if(distToRight < h) {
+        for(float offset = boundaryParticleDistance; offset < h; offset += boundaryParticleDistance) {
+            if(distToRight - offset > 0) {
+                float r = offset;
+                boundaryDensity += boundaryParticleInfluence * W_Poly6(r, h);
+            }
+        }
+    }
+    
+    // Front wall boundary
+    float distToFront = pos.z - minBoundary.z;
+    if(distToFront < h) {
+        for(float offset = boundaryParticleDistance; offset < h; offset += boundaryParticleDistance) {
+            if(distToFront - offset > 0) {
+                float r = offset;
+                boundaryDensity += boundaryParticleInfluence * W_Poly6(r, h);
+            }
+        }
+    }
+    
+    // Back wall boundary
+    float distToBack = maxBoundary.z - pos.z;
+    if(distToBack < h) {
+        for(float offset = boundaryParticleDistance; offset < h; offset += boundaryParticleDistance) {
+            if(distToBack - offset > 0) {
+                float r = offset;
+                boundaryDensity += boundaryParticleInfluence * W_Poly6(r, h);
+            }
+        }
+    }
+    
+    return boundaryDensity;
+}
+
 void main() {
     uint id = gl_GlobalInvocationID.x;
     if (id >= numParticles) return;
@@ -128,14 +195,17 @@ void main() {
         }
     }
     
+    // Add virtual boundary particles contribution to density
+    density += calculateBoundaryDensity(pos);
+    
     // Store calculated density
     particles[id].density = density;
     
     // Calculate constraint value C_i (density/rest_density - 1)
     float C = density/restDensity - 1.0;
     
-    // Early exit if no pressure correction needed
-    if (C <= 0.0) {
+    // Early exit if no pressure correction needed (slightly negative allowed)
+    if (C <= -0.1) {
         particles[id].lambda = 0.0;
         return;
     }
@@ -180,10 +250,26 @@ void main() {
     }
     
     // Add small epsilon term for numerical stability (CFM)
-    float epsilon = 1e+05;
+    float epsilon = 0.1; // Reduced from 1e+05 for smaller damping
     
     // Calculate lambda according to equation 11
+    // Clamp the constraint to avoid extreme corrections
+    C = clamp(C, -0.2, 0.2);
     particles[id].lambda = -C / (gradientSum + epsilon);
 
-    particles[id].color = vec3(0.0f, 1.0f, 1.0f);
+    // Update particle color based on density ratio
+    float ratio = min(particles[id].density / restDensity, 2.0);
+    if (ratio < 0.8) {
+        // Low density - blue
+        particles[id].color = vec3(0.0, 0.0, 1.0);
+    } else if (ratio < 1.0) {
+        // Normal density - cyan to green
+        particles[id].color = mix(vec3(0.0, 1.0, 1.0), vec3(0.0, 1.0, 0.0), (ratio - 0.8) * 5.0);
+    } else if (ratio < 1.2) {
+        // High density - green to yellow
+        particles[id].color = mix(vec3(0.0, 1.0, 0.0), vec3(1.0, 1.0, 0.0), (ratio - 1.0) * 5.0);
+    } else {
+        // Very high density - yellow to red
+        particles[id].color = mix(vec3(1.0, 1.0, 0.0), vec3(1.0, 0.0, 0.0), min((ratio - 1.2) * 5.0, 1.0));
+    }
 }

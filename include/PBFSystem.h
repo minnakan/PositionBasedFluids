@@ -38,4 +38,7 @@ private:
     // Flags and handles
     bool computeSystemInitialized;
     PBFComputeSystem* computeSystem;
+    int frameCount;
+    int warmupFrames;
+
 };
