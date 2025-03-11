@@ -170,7 +170,7 @@ void main() {
                         // Calculate artificial pressure term (s_corr) from equation 13
                         float k = 0.1;      
                         float n = 4.0;     
-                        float deltaq = 0.3 * h;
+                        float deltaq = 0.2 * h;
                         
                         float wij = W_Poly6(dist, h);
                         float wdeltaq = W_Poly6(deltaq, h);
@@ -190,12 +190,6 @@ void main() {
     
     // Scale by 1/restDensity
     deltaPos /= restDensity;
-
-    float maxDeltaPos = particleRadius * 0.5;
-    float deltaMag = length(deltaPos);
-    if (deltaMag > maxDeltaPos) {
-        deltaPos = (deltaPos / deltaMag) * maxDeltaPos;
-    }
     
     // Add wall repulsion forces with reduced effect
     vec3 wallRepulsion = calculateWallRepulsion(pos);

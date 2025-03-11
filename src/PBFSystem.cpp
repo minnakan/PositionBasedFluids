@@ -125,7 +125,7 @@ void PBFSystem::step()
         std::cerr << "[PBFSystem] ERROR: compute system not initialized!\n";
         return;
     }
-    const int numSubsteps = 5;
+    const int numSubsteps = 2;
     const float subDt = dt / numSubsteps;
 
     // Calculate warmup progress (0 to 1)

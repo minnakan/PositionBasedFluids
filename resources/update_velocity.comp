@@ -51,32 +51,19 @@ void main() {
     
     // Update velocity based on position change (v = dx/dt)
     // Use a smoothing factor to avoid abrupt velocity changes
-    float smoothingFactor = 0.8;
+    float smoothingFactor = 1;
     vec3 newVelocity = positionChange / dt;
     particles[id].velocity = mix(particles[id].velocity, newVelocity, smoothingFactor);
     
-    // Apply additional damping to avoid energy build-up in the system
-    float dampingFactor = 0.98;
-    particles[id].velocity *= dampingFactor;
     
     // Apply vorticity confinement (simplified)
     // This helps preserve natural fluid motion and counter numerical dissipation
     
     // Apply XSPH viscosity - makes particles move more cohesively
     // We'll implement a simplified version directly here
-    float viscosityStrength = 0.001;
-    if (length(particles[id].velocity) > 1.0) {
-        // Apply viscosity only to fast-moving particles
-        particles[id].velocity *= (1.0 - viscosityStrength);
-    }
-    
-    // Velocity clamping to avoid numerical instability
-    float maxVelocity = 10.0;
-    float currentSpeed = length(particles[id].velocity);
-    if (currentSpeed > maxVelocity) {
-        particles[id].velocity = (particles[id].velocity / currentSpeed) * maxVelocity;
-    }
-    
+    float viscosityStrength = 0.01;
+    particles[id].velocity *= (1.0 - viscosityStrength);
+        
     // Boundary velocity handling - if the particle is very close to boundary, 
     // reduce perpendicular velocity component to prevent sticking
     float boundaryThreshold = particleRadius * 2.0;
