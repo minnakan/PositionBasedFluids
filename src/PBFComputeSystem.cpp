@@ -3,7 +3,7 @@
 #include <iomanip>
 #include <sstream> // for better logs
 
-PBFComputeSystem::PBFComputeSystem(): externalForcesShader(nullptr), constructGridShader(nullptr), clearGridShader(nullptr), densityShader(nullptr), positionUpdateShader(nullptr), velocityUpdateShader(nullptr), simParamsUBO(0),particleSSBO(0),numParticles(0),maxParticles(0)
+PBFComputeSystem::PBFComputeSystem(): externalForcesShader(nullptr), constructGridShader(nullptr), clearGridShader(nullptr), densityShader(nullptr), positionUpdateShader(nullptr), vorticityViscosityShader(nullptr), velocityUpdateShader(nullptr), simParamsUBO(0),particleSSBO(0),numParticles(0),maxParticles(0)
 {
 }
 
@@ -11,7 +11,7 @@ PBFComputeSystem::~PBFComputeSystem() {
     cleanup();
 }
 
-bool PBFComputeSystem::initialize(unsigned int maxParticles, float dt, const glm::vec4& gravity, float particleRadius, float smoothingLength, const glm::vec4& minBoundary, const glm::vec4& maxBoundary, float cellSize, unsigned int maxParticlesPerCell,float restDensity) {
+bool PBFComputeSystem::initialize(unsigned int maxParticles, float dt, const glm::vec4& gravity, float particleRadius, float smoothingLength, const glm::vec4& minBoundary, const glm::vec4& maxBoundary, float cellSize, unsigned int maxParticlesPerCell,float restDensity, float vorticityEpsilon, float xsphViscosityCoeff) {
     // Store the maximum number of particles
     this->maxParticles = maxParticles;
 
@@ -34,6 +34,9 @@ bool PBFComputeSystem::initialize(unsigned int maxParticles, float dt, const glm
         positionUpdateShader = new ComputeShader(RESOURCES_PATH"apply_position_update.comp");
         std::cout << "[PBFComputeSystem] Position update shader loaded successfully (ID=" << positionUpdateShader->ID << ")\n";
 
+        vorticityViscosityShader = new ComputeShader(RESOURCES_PATH"apply_vorticity_viscosity.comp");
+        std::cout << "[PBFComputeSystem] Vorticity and viscosity shader loaded successfully (ID=" << vorticityViscosityShader->ID << ")\n";
+
         velocityUpdateShader = new ComputeShader(RESOURCES_PATH"update_velocity.comp");
         std::cout << "[PBFComputeSystem] Velocity update shader loaded successfully (ID=" << velocityUpdateShader->ID << ")\n";
     }
@@ -51,13 +54,13 @@ bool PBFComputeSystem::initialize(unsigned int maxParticles, float dt, const glm
 	params.gravity = gravity;
 	params.particleRadius = particleRadius;
 	params.h = smoothingLength;
-    params.cellSize = 0.2f;
-    params.maxParticlesPerCell = 64;
     params.minBoundary = minBoundary;
     params.maxBoundary = maxBoundary;
 	params.cellSize = cellSize;
 	params.maxParticlesPerCell = maxParticlesPerCell;
     params.restDensity = restDensity;
+    params.vorticityEpsilon = vorticityEpsilon;
+    params.xsphViscosityCoeff = xsphViscosityCoeff;
 
     initializeGrid();
 
@@ -81,7 +84,7 @@ void PBFComputeSystem::createBuffers(unsigned int maxParticles) {
 }
 
 
-void PBFComputeSystem::updateSimulationParams(float dt,const glm::vec4& gravity,float particleRadius,float smoothingLength,const glm::vec4& minBoundary,const glm::vec4& maxBoundary, float cellSize, unsigned int maxParticlesPerCell,float restDensity) {
+void PBFComputeSystem::updateSimulationParams(float dt,const glm::vec4& gravity,float particleRadius,float smoothingLength,const glm::vec4& minBoundary,const glm::vec4& maxBoundary, float cellSize, unsigned int maxParticlesPerCell,float restDensity, float vorticityEpsilon, float xsphViscosityCoeff) {
     // Update local params struct
     params.dt = dt;
     params.gravity = gravity;
@@ -91,6 +94,9 @@ void PBFComputeSystem::updateSimulationParams(float dt,const glm::vec4& gravity,
 	params.maxBoundary = maxBoundary;
 	params.cellSize = cellSize;
 	params.maxParticlesPerCell = maxParticlesPerCell;
+	params.restDensity = restDensity;
+	params.vorticityEpsilon = vorticityEpsilon;
+	params.xsphViscosityCoeff = xsphViscosityCoeff;
 
     
     // Upload to GPU
@@ -253,19 +259,12 @@ void PBFComputeSystem::step() {
 
     findNeighbors();
 
-
     const int solverIterations = 3;
     for (int iter = 0; iter < solverIterations; iter++) {
         calculateDensity();
         applyPositionUpdate();
-
-		//findNeighbors();
-
-        /*if (iter < solverIterations - 1 && iter % 2 == 0) {
-            findNeighbors();
-        }*/
     }
-
+    applyVorticityViscosity();
     updateVelocity();
 }
 
@@ -424,6 +423,32 @@ void PBFComputeSystem::applyPositionUpdate() {
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 }
 
+void PBFComputeSystem::applyVorticityViscosity() {
+    // Calculate # of work groups
+    unsigned int numGroups = (numParticles + 255) / 256;
+    if (numGroups == 0) numGroups = 1;
+
+    // Ensure simulation params are up to date
+    glBindBuffer(GL_UNIFORM_BUFFER, simParamsUBO);
+    glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(SimParams), &params);
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+    // Activate the vorticity and viscosity compute shader
+    vorticityViscosityShader->use();
+
+    // Bind buffers
+    glBindBufferBase(GL_UNIFORM_BUFFER, 0, simParamsUBO);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, particleSSBO);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, cellCountsBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, cellParticlesBuffer);
+
+    // Dispatch compute shader
+    glDispatchCompute(numGroups, 1, 1);
+
+    // Memory barrier to ensure compute shader has completed
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+}
+
 void PBFComputeSystem::updateVelocity() {
     // Calculate # of work groups
     unsigned int numGroups = (numParticles + 255) / 256;
@@ -447,7 +472,6 @@ void PBFComputeSystem::updateVelocity() {
     // Memory barrier to ensure compute shader has completed
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 }
-
 
 bool PBFComputeSystem::checkComputeShaderSupport() {
     GLint maxComputeWorkGroupCount[3] = { 0 };
@@ -558,6 +582,9 @@ void PBFComputeSystem::cleanup() {
 
     delete positionUpdateShader;
     positionUpdateShader = nullptr;
+
+    delete vorticityViscosityShader;
+    vorticityViscosityShader = nullptr;
     
     delete velocityUpdateShader;
     velocityUpdateShader = nullptr;

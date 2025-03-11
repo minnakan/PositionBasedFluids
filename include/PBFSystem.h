@@ -17,6 +17,8 @@ public:
     float cellSize;
     unsigned int maxParticlesPerCell;
     float restDensity;
+    float vorticityEpsilon;
+    float xsphViscosityCoeff;
     bool enableDebugInfo;
 
     // Public particle data for rendering

@@ -17,6 +17,6 @@ void main()
     }
     
     // Use a lighter version of the particle color
-    vec3 lighterColor = mix(Color, vec3(1.0), 0.5); // Blend with white to make it lighter
+    vec3 lighterColor = mix(Color, vec3(1.0), 0.25); // Blend with white to make it lighter
     FragColor = vec4(lighterColor, 1.0);
 }

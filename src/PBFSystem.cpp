@@ -11,13 +11,16 @@ PBFSystem::PBFSystem()
     particleRadius = 0.2f;
     h = particleRadius * 2.5f;  // Smoothing length
 
-    minBoundary = glm::vec4(-8.0f, 0.0f, -2.5f, 0.0f);
-    maxBoundary = glm::vec4(8.0f, 100.0f, 2.5f, 0.0f);
+    minBoundary = glm::vec4(-8.0f, 0.0f, -8.0f, 0.0f);
+    maxBoundary = glm::vec4(8.0f, 100.0f, 8.0f, 0.0f);
 
 	cellSize = h;
 	maxParticlesPerCell = 64;
 
-    restDensity = 200.0f;
+    restDensity = 250.0f;
+
+    vorticityEpsilon = 0.01f;
+    xsphViscosityCoeff = 0.01f;
 
     computeSystem = nullptr;
     computeSystemInitialized = false;
@@ -38,9 +41,9 @@ void PBFSystem::initScene()
     frameCount = 0;  // Reset frame counter for warmup
 
     // Dam break parameters
-    const float damWidth = 4.0f;
+    const float damWidth = 15.0f;
     const float damHeight = 50.0f;
-    const float damDepth = 10.f;
+    const float damDepth = 5.f;
 
     // Place dam in left portion of container
     const float leftOffset = minBoundary.x + particleRadius * 3.0f;
@@ -135,7 +138,7 @@ void PBFSystem::step()
     glm::vec4 scaledGravity = gravity * warmupProgress;
 
     for (int subStep = 0; subStep < numSubsteps; ++subStep) {
-        computeSystem->updateSimulationParams(dt, scaledGravity, particleRadius, h, minBoundary, maxBoundary, cellSize, maxParticlesPerCell, restDensity);
+        computeSystem->updateSimulationParams(dt, scaledGravity, particleRadius, h, minBoundary, maxBoundary, cellSize, maxParticlesPerCell, restDensity,vorticityEpsilon,xsphViscosityCoeff);
         computeSystem->step();
     }
 
@@ -160,12 +163,12 @@ void PBFSystem::initializeComputeSystem()
 
     // Some max capacity
     const unsigned int MAX_PARTICLES = 1000000;
-    bool success = computeSystem->initialize(MAX_PARTICLES,dt,gravity,particleRadius,h,minBoundary,maxBoundary,cellSize,maxParticlesPerCell,restDensity);
+    bool success = computeSystem->initialize(MAX_PARTICLES,dt,gravity,particleRadius,h,minBoundary,maxBoundary,cellSize,maxParticlesPerCell,restDensity, vorticityEpsilon, xsphViscosityCoeff);
 
     if (success) {
         computeSystemInitialized = true;
         std::cout << "[PBFSystem] GPU compute system initialized\n";
-        computeSystem->updateSimulationParams(dt, gravity, particleRadius, h, minBoundary, maxBoundary, cellSize, maxParticlesPerCell,restDensity);
+        computeSystem->updateSimulationParams(dt, gravity, particleRadius, h, minBoundary, maxBoundary, cellSize, maxParticlesPerCell,restDensity, vorticityEpsilon, xsphViscosityCoeff);
     }
     else {
         std::cerr << "[PBFSystem] Failed to initialize GPU compute system\n";

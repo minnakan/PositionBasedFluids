@@ -36,6 +36,11 @@ layout(std140, binding = 0) uniform SimulationParams {
     float cellSize;
     uint maxParticlesPerCell;
     float restDensity;
+
+    float vorticityEpsilon;
+    float xsphViscosityCoeff;
+    float _pad5;
+    float _pad6; 
 };
 
 layout(std430, binding = 1) buffer ParticleBuffer {
@@ -80,65 +85,30 @@ uint getCellIndex(vec3 position) {
 // Add virtual boundary particles contribution
 float calculateBoundaryDensity(vec3 pos) {
     float boundaryDensity = 0.0;
-    float boundaryParticleDistance = particleRadius * 0.5;
-    float boundaryParticleInfluence = 0.5; // Reduced from default to avoid over-influence
     
-    // Check distance to boundaries and add virtual particles contribution
-    
-    // Floor (bottom) boundary
+    // Distance to boundaries
     float distToBottom = pos.y - minBoundary.y;
-    if(distToBottom < h) {
-        // Add contribution from virtual particles below
-        for(float offset = boundaryParticleDistance; offset < h; offset += boundaryParticleDistance) {
-            if(distToBottom - offset > 0) {
-                float r = offset;
-                boundaryDensity += boundaryParticleInfluence * W_Poly6(r, h);
-            }
-        }
-    }
-    
-    // Left wall boundary
     float distToLeft = pos.x - minBoundary.x;
-    if(distToLeft < h) {
-        for(float offset = boundaryParticleDistance; offset < h; offset += boundaryParticleDistance) {
-            if(distToLeft - offset > 0) {
-                float r = offset;
-                boundaryDensity += boundaryParticleInfluence * W_Poly6(r, h);
-            }
-        }
-    }
-    
-    // Right wall boundary
     float distToRight = maxBoundary.x - pos.x;
-    if(distToRight < h) {
-        for(float offset = boundaryParticleDistance; offset < h; offset += boundaryParticleDistance) {
-            if(distToRight - offset > 0) {
-                float r = offset;
-                boundaryDensity += boundaryParticleInfluence * W_Poly6(r, h);
-            }
-        }
-    }
-    
-    // Front wall boundary
     float distToFront = pos.z - minBoundary.z;
-    if(distToFront < h) {
-        for(float offset = boundaryParticleDistance; offset < h; offset += boundaryParticleDistance) {
-            if(distToFront - offset > 0) {
-                float r = offset;
-                boundaryDensity += boundaryParticleInfluence * W_Poly6(r, h);
-            }
-        }
-    }
-    
-    // Back wall boundary
     float distToBack = maxBoundary.z - pos.z;
+    
+    // Add density contribution based on proximity to boundaries
+    // Use a smooth falloff based on distance to boundary
+    if(distToBottom < h) {
+        boundaryDensity += (1.0 - distToBottom/h) * 0.5;
+    }
+    if(distToLeft < h) {
+        boundaryDensity += (1.0 - distToLeft/h) * 0.5;
+    }
+    if(distToRight < h) {
+        boundaryDensity += (1.0 - distToRight/h) * 0.5;
+    }
+    if(distToFront < h) {
+        boundaryDensity += (1.0 - distToFront/h) * 0.5;
+    }
     if(distToBack < h) {
-        for(float offset = boundaryParticleDistance; offset < h; offset += boundaryParticleDistance) {
-            if(distToBack - offset > 0) {
-                float r = offset;
-                boundaryDensity += boundaryParticleInfluence * W_Poly6(r, h);
-            }
-        }
+        boundaryDensity += (1.0 - distToBack/h) * 0.5;
     }
     
     return boundaryDensity;

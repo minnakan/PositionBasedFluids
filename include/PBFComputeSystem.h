@@ -46,6 +46,11 @@ struct SimParams {
     float cellSize;
     unsigned int maxParticlesPerCell;
     float restDensity;
+
+    float vorticityEpsilon;
+    float xsphViscosityCoeff;
+    float _pad5;
+    float _pad6;
 };
 
 class PBFComputeSystem {
@@ -53,7 +58,7 @@ public:
     PBFComputeSystem();
     ~PBFComputeSystem();
 
-    bool initialize(unsigned int maxParticles, float dt, const glm::vec4& gravity, float particleRadius, float smoothingLength, const glm::vec4& minBoundary, const glm::vec4& maxBoundary, float cellSize,unsigned int maxParticlesPerCell,float restDensity);
+    bool initialize(unsigned int maxParticles, float dt, const glm::vec4& gravity, float particleRadius, float smoothingLength, const glm::vec4& minBoundary, const glm::vec4& maxBoundary, float cellSize,unsigned int maxParticlesPerCell,float restDensity, float vorticityEpsilon, float xsphViscosityCoeff);
     void uploadParticles(const std::vector<Particle>& particles);
     void downloadParticles(std::vector<Particle>& particles);
     void step();
@@ -64,10 +69,11 @@ public:
     void findNeighbors();
 	void calculateDensity();
     void applyPositionUpdate();
+    void applyVorticityViscosity();
     void updateVelocity();
 
 
-    void updateSimulationParams(float dt,const glm::vec4& gravity,float particleRadius,float smoothingLength,const glm::vec4& minBoundary,const glm::vec4& maxBoundary, float cellSize, unsigned int maxParticlesPerCell, float restDensity);
+    void updateSimulationParams(float dt,const glm::vec4& gravity,float particleRadius,float smoothingLength,const glm::vec4& minBoundary,const glm::vec4& maxBoundary, float cellSize, unsigned int maxParticlesPerCell, float restDensity, float vorticityEpsilon, float xsphViscosityCoeff);
 
 private:
     void createBuffers(unsigned int maxParticles);
@@ -81,6 +87,7 @@ private:
     ComputeShader* clearGridShader;
     ComputeShader* densityShader;
     ComputeShader* positionUpdateShader;
+    ComputeShader* vorticityViscosityShader;
     ComputeShader* velocityUpdateShader;
 
     GLuint simParamsUBO;

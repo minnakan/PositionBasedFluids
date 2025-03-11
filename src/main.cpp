@@ -128,8 +128,8 @@ int main(void)
         // Update simulation
         pbf.step();
 
-        // Clear the frame with a lighter gray background
-        glClearColor(0.85f, 0.85f, 0.85f, 1.0f);  // Light gray, almost white
+        
+        glClearColor(0.15f, 0.15f, 0.15f, 1.0f);  // Light gray, almost white
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // Prepare view and projection matrices

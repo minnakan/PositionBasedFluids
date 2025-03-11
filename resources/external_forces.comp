@@ -36,6 +36,11 @@ layout(std140, binding = 0) uniform SimulationParams {
     float cellSize;
     uint maxParticlesPerCell;
     float restDensity;
+
+    float vorticityEpsilon;
+    float xsphViscosityCoeff;
+    float _pad5;
+    float _pad6; 
 };
 
 layout(std430, binding = 1) buffer ParticleBuffer {
@@ -46,67 +51,44 @@ void main() {
     uint id = gl_GlobalInvocationID.x;
     if (id >= numParticles) return;
     
-    // Apply external forces (gravity) with slight damping to avoid instability
-    // Damped gravity to help prevent boundary issues
-    particles[id].velocity += gravity.xyz * dt;//* 0.98;
+    // Apply external forces (gravity)
+    particles[id].velocity += gravity.xyz * dt;
     
-    // IMPORTANT: Reset predicted position to current position at the start of each step
+    // Reset predicted position
     particles[id].predictedPos = particles[id].position;
     
     // Update predicted position based on velocity
     particles[id].predictedPos += particles[id].velocity * dt;
     
-    // Define boundary parameters - modified for better response
-    float boundaryDamping = 0.75;    // Increased damping for more energy loss at boundaries
-    float repulsionStrength = 0.15; // Adjusted repulsion strength
-    float safetyMargin = 0.1;       // Increased safety margin
+    // Simple boundary handling with bounce effect
+    float boundaryDamping = 0.5;  // Simplified damping parameter
     
-    // Floor constraint with bounce effect
+    // Simple position clamping for all boundaries
     if (particles[id].predictedPos.y < minBoundary.y + particleRadius) {
-        // Distance penetrated into the boundary
-        float penetrationDepth = (minBoundary.y + particleRadius) - particles[id].predictedPos.y;
-        
-        // Push particle out with extra safety margin
-        particles[id].predictedPos.y = minBoundary.y + particleRadius + safetyMargin * particleRadius;
-        
-        // Bounce with damping - more energy loss
+        particles[id].predictedPos.y = minBoundary.y + particleRadius;
         particles[id].velocity.y = -particles[id].velocity.y * boundaryDamping;
         
-        // Add small upward impulse based on penetration depth for stability
-        particles[id].velocity.y += penetrationDepth * repulsionStrength;
-        
-        // Add lateral friction when hitting the floor - to prevent sliding
-        particles[id].velocity.x *= 0.9;
-        particles[id].velocity.z *= 0.9;
+        // Simple floor friction
+        particles[id].velocity.xz *= 0.9;
     }
     
-    // X-axis boundaries (left and right walls)
+    // X boundaries (combined checks)
     if (particles[id].predictedPos.x < minBoundary.x + particleRadius) {
-        float penetrationDepth = (minBoundary.x + particleRadius) - particles[id].predictedPos.x;
-        particles[id].predictedPos.x = minBoundary.x + particleRadius + safetyMargin * particleRadius;
+        particles[id].predictedPos.x = minBoundary.x + particleRadius;
         particles[id].velocity.x = -particles[id].velocity.x * boundaryDamping;
-        particles[id].velocity.x += penetrationDepth * repulsionStrength;
+    } 
+    else if (particles[id].predictedPos.x > maxBoundary.x - particleRadius) {
+        particles[id].predictedPos.x = maxBoundary.x - particleRadius;
+        particles[id].velocity.x = -particles[id].velocity.x * boundaryDamping;
     }
     
-    if (particles[id].predictedPos.x > maxBoundary.x - particleRadius) {
-        float penetrationDepth = particles[id].predictedPos.x - (maxBoundary.x - particleRadius);
-        particles[id].predictedPos.x = maxBoundary.x - particleRadius - safetyMargin * particleRadius;
-        particles[id].velocity.x = -particles[id].velocity.x * boundaryDamping;
-        particles[id].velocity.x -= penetrationDepth * repulsionStrength;
-    }
-    
-    // Z-axis boundaries (front and back walls)
+    // Z boundaries (combined checks)
     if (particles[id].predictedPos.z < minBoundary.z + particleRadius) {
-        float penetrationDepth = (minBoundary.z + particleRadius) - particles[id].predictedPos.z;
-        particles[id].predictedPos.z = minBoundary.z + particleRadius + safetyMargin * particleRadius;
+        particles[id].predictedPos.z = minBoundary.z + particleRadius;
         particles[id].velocity.z = -particles[id].velocity.z * boundaryDamping;
-        particles[id].velocity.z += penetrationDepth * repulsionStrength;
-    }
-    
-    if (particles[id].predictedPos.z > maxBoundary.z - particleRadius) {
-        float penetrationDepth = particles[id].predictedPos.z - (maxBoundary.z - particleRadius);
-        particles[id].predictedPos.z = maxBoundary.z - particleRadius - safetyMargin * particleRadius;
+    } 
+    else if (particles[id].predictedPos.z > maxBoundary.z - particleRadius) {
+        particles[id].predictedPos.z = maxBoundary.z - particleRadius;
         particles[id].velocity.z = -particles[id].velocity.z * boundaryDamping;
-        particles[id].velocity.z -= penetrationDepth * repulsionStrength;
     }
 }
