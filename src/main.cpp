@@ -76,6 +76,10 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
             pbf.initScene(SceneType::DropBlock);
             break;
         }
+        case GLFW_KEY_Q: {
+            pbf.toggleWaveMode();
+            break;
+        }
         case GLFW_KEY_R: {
             std::cout << "Resetting current scene\n";
             pbf.initScene(pbf.currentScene);

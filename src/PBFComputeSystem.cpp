@@ -41,8 +41,7 @@ bool PBFComputeSystem::initialize(unsigned int maxParticles, float dt, const glm
         std::cout << "[PBFComputeSystem] Velocity update shader loaded successfully (ID=" << velocityUpdateShader->ID << ")\n";
     }
     catch (const std::exception& e) {
-        std::cerr << "[PBFComputeSystem] Failed to load compute shader: "
-            << e.what() << std::endl;
+        std::cerr << "[PBFComputeSystem] Failed to load compute shader: "<< e.what() << std::endl;
         return false;
     }
 
@@ -68,14 +67,14 @@ bool PBFComputeSystem::initialize(unsigned int maxParticles, float dt, const glm
 }
 
 void PBFComputeSystem::createBuffers(unsigned int maxParticles) {
-    // Simulation parameters uniform buffer - CPU write, GPU read
+    //Simulation parameters uniform buffer - CPU write, GPU read
     glGenBuffers(1, &simParamsUBO);
     glBindBuffer(GL_UNIFORM_BUFFER, simParamsUBO);
     glBufferData(GL_UNIFORM_BUFFER, sizeof(SimParams), &params, GL_DYNAMIC_DRAW);
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
     std::cout << "[PBFComputeSystem] Created simulation params UBO (ID="<< simParamsUBO << ")\n";
 
-    // Particle buffer
+    //Particle buffer
     glGenBuffers(1, &particleSSBO);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, particleSSBO);
     glBufferData(GL_SHADER_STORAGE_BUFFER, maxParticles * sizeof(Particle), nullptr, GL_DYNAMIC_READ);
@@ -85,7 +84,6 @@ void PBFComputeSystem::createBuffers(unsigned int maxParticles) {
 
 
 void PBFComputeSystem::updateSimulationParams(float dt,const glm::vec4& gravity,float particleRadius,float smoothingLength,const glm::vec4& minBoundary,const glm::vec4& maxBoundary, float cellSize, unsigned int maxParticlesPerCell,float restDensity, float vorticityEpsilon, float xsphViscosityCoeff) {
-    // Update local params struct
     params.dt = dt;
     params.gravity = gravity;
 	params.particleRadius = particleRadius;
@@ -119,7 +117,6 @@ void PBFComputeSystem::uploadParticles(const std::vector<Particle>& particles) {
         numParticles = (unsigned int)particles.size();
     }
 
-    // Upload
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, particleSSBO);
     glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, numParticles * sizeof(Particle), particles.data());
 }
@@ -132,14 +129,12 @@ void PBFComputeSystem::downloadParticles(std::vector<Particle>& particles) {
 
     if (numParticles > maxParticles) {
         std::cerr << "[PBFComputeSystem] ERROR: numParticles (" << numParticles << ") exceeds maxParticles (" << maxParticles << ")\n";
-        numParticles = maxParticles; // Cap it to avoid overflow
+        numParticles = maxParticles;
     }
 
-    // Ensure compute finishes
     glFinish();
 
     try {
-        //std::cout << "[PBFComputeSystem] Resizing particle array to " << numParticles << " particles\n";
         if (particles.size() != numParticles)
             particles.resize(numParticles);
     }
@@ -148,7 +143,7 @@ void PBFComputeSystem::downloadParticles(std::vector<Particle>& particles) {
         return;
     }
 
-    // Download particles data
+    //Download particles data
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, particleSSBO);
     GLint bufferSize = 0;
     glGetBufferParameteriv(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &bufferSize);
@@ -159,93 +154,7 @@ void PBFComputeSystem::downloadParticles(std::vector<Particle>& particles) {
     }
 
     glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, numParticles * sizeof(Particle), particles.data());
-
-    // Download and log cell counts data
-    static int frameCount = 0;
-    frameCount++;
-
-    // Only log every 60 frames to avoid console spam
-    if (frameCount % 60 == 0) {
-        // Download all particle data to analyze density and lambda
-        std::vector<Particle> particleData(numParticles);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, particleSSBO);
-        glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, numParticles * sizeof(Particle), particleData.data());
-
-        // Analyze density statistics
-        float minDensity = std::numeric_limits<float>::max();
-        float maxDensity = 0.0f;
-        float totalDensity = 0.0f;
-        int particlesOverRestDensity = 0;
-
-        // Analyze lambda statistics
-        float minLambdaAbs = std::numeric_limits<float>::max();
-        float maxLambdaAbs = 0.0f;
-        float totalLambdaAbs = 0.0f;
-
-        for (int i = 0; i < numParticles; i++) {
-            // Density statistics
-            float density = particleData[i].density;
-            minDensity = std::min(minDensity, density);
-            maxDensity = std::max(maxDensity, density);
-            totalDensity += density;
-
-            if (density > params.restDensity) {
-                particlesOverRestDensity++;
-            }
-
-            // Lambda statistics (using absolute value since lambda is typically negative)
-            float lambdaAbs = std::abs(particleData[i].lambda);
-            minLambdaAbs = std::min(minLambdaAbs, lambdaAbs);
-            maxLambdaAbs = std::max(maxLambdaAbs, lambdaAbs);
-            totalLambdaAbs += lambdaAbs;
-        }
-
-        float avgDensity = totalDensity / numParticles;
-        float percentOverRestDensity = (particlesOverRestDensity * 100.0f) / numParticles;
-        float avgLambdaAbs = totalLambdaAbs / numParticles;
-
-        std::cout << "===== Fluid Statistics (Frame " << frameCount << ") =====\n";
-        std::cout << "Density (rest density = " << params.restDensity << "):\n";
-        std::cout << "  Min:   " << minDensity << "\n";
-        std::cout << "  Max:   " << maxDensity << "\n";
-        std::cout << "  Avg:   " << avgDensity << "\n";
-        std::cout << "  % Over Rest: " << percentOverRestDensity << "% (" << particlesOverRestDensity << " particles)\n";
-
-        std::cout << "Lambda (constraint multiplier):\n";
-        std::cout << "  Min |λ|: " << minLambdaAbs << "\n";
-        std::cout << "  Max |λ|: " << maxLambdaAbs << "\n";
-        std::cout << "  Avg |λ|: " << avgLambdaAbs << "\n";
-
-        // Find the 5 particles with highest density
-        std::cout << "Top 5 highest density particles:\n";
-        for (int topN = 0; topN < 5; topN++) {
-            int maxIndex = -1;
-            float maxValue = 0.0f;
-
-            // Find the next highest density
-            for (int i = 0; i < numParticles; i++) {
-                if (particleData[i].density > maxValue) {
-                    maxIndex = i;
-                    maxValue = particleData[i].density;
-                }
-            }
-
-            if (maxIndex >= 0) {
-                glm::vec3 pos = particleData[maxIndex].position;
-                std::cout << "  Particle " << maxIndex << " at ["
-                    << pos.x << ", " << pos.y << ", " << pos.z << "]: "
-                    << "density = " << maxValue
-                    << ", lambda = " << particleData[maxIndex].lambda << "\n";
-
-                // Zero out this particle's density so we find the next highest
-                particleData[maxIndex].density = 0.0f;
-            }
-        }
-
-        std::cout << "=======================================\n";
-
-    }
-
+  
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 

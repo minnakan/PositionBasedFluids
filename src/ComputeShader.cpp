@@ -4,32 +4,19 @@
 #include <iostream>
 
 ComputeShader::ComputeShader(const char* computePath) {
-    // 1. Retrieve compute shader source code from file
     std::string computeCode;
     std::ifstream cShaderFile;
 
-    // Print path for debugging
     std::cout << "Loading compute shader from: " << computePath << std::endl;
-
-    // Ensure ifstream objects can throw exceptions
     cShaderFile.exceptions(std::ifstream::failbit | std::ifstream::badbit);
 
     try {
-        // Open file
         cShaderFile.open(computePath);
         std::stringstream cShaderStream;
 
-        // Read file's buffer contents into stream
         cShaderStream << cShaderFile.rdbuf();
-
-        // Close file handler
         cShaderFile.close();
-
-        // Convert stream into string
         computeCode = cShaderStream.str();
-
-        // Print the first 100 characters for debugging
-        //std::cout << "Shader code preview: " << computeCode.substr(0, 100) << "...\n";
     }
     catch (std::ifstream::failure& e) {
         std::cerr << "ERROR::SHADER::FILE_NOT_SUCCESSFULLY_READ: " << e.what() << std::endl;
@@ -38,7 +25,6 @@ ComputeShader::ComputeShader(const char* computePath) {
 
     const char* cShaderCode = computeCode.c_str();
 
-    // 2. Compile shader
     unsigned int compute;
     int success;
     char infoLog[512];
@@ -53,19 +39,16 @@ ComputeShader::ComputeShader(const char* computePath) {
     if (!success) {
         glGetShaderInfoLog(compute, 512, NULL, infoLog);
         std::cerr << "ERROR::SHADER::COMPUTE::COMPILATION_FAILED\n" << infoLog << std::endl;
-
-        // Print shader code for debugging
         std::cerr << "Shader source code:\n" << computeCode << std::endl;
-
         throw std::runtime_error("Compute shader compilation failed");
     }
 
-    // 3. Create shader program
+    //Create shader program
     ID = glCreateProgram();
     glAttachShader(ID, compute);
     glLinkProgram(ID);
 
-    // Check for linking errors
+    //Check for linking errors
     glGetProgramiv(ID, GL_LINK_STATUS, &success);
     if (!success) {
         glGetProgramInfoLog(ID, 512, NULL, infoLog);
@@ -73,7 +56,7 @@ ComputeShader::ComputeShader(const char* computePath) {
         throw std::runtime_error("Compute shader program linking failed");
     }
 
-    // Print active uniforms
+    //Print active uniforms
     GLint numUniforms = 0;
     glGetProgramiv(ID, GL_ACTIVE_UNIFORMS, &numUniforms);
     std::cout << "Compute shader has " << numUniforms << " active uniforms.\n";
@@ -83,12 +66,7 @@ ComputeShader::ComputeShader(const char* computePath) {
     GLenum type;
     GLsizei length;
 
-    /*for (int i = 0; i < numUniforms; i++) {
-        glGetActiveUniform(ID, i, sizeof(name), &length, &size, &type, name);
-        std::cout << "Uniform #" << i << ": " << name << " (type=" << type << ", size=" << size << ")\n";
-    }*/
-
-    // Print shader program validation status
+    //Print shader program validation status
     glValidateProgram(ID);
     glGetProgramiv(ID, GL_VALIDATE_STATUS, &success);
     if (!success) {
@@ -96,7 +74,7 @@ ComputeShader::ComputeShader(const char* computePath) {
         std::cerr << "WARNING::SHADER::PROGRAM::VALIDATION_FAILED\n" << infoLog << std::endl;
     }
 
-    // Delete shader as it's linked into the program now
+    //Delete shader as it's linked into the program now
     glDeleteShader(compute);
 
     std::cout << "Compute shader (ID=" << ID << ") compilation and linking successful.\n";
@@ -116,8 +94,7 @@ void ComputeShader::use() {
     // Check for any errors before using
     GLenum err = glGetError();
     if (err != GL_NO_ERROR) {
-        std::cerr << "OpenGL error before using compute shader: 0x"
-            << std::hex << err << std::dec << std::endl;
+        std::cerr << "OpenGL error before using compute shader: 0x"<< std::hex << err << std::dec << std::endl;
     }
 
     glUseProgram(ID);
@@ -127,36 +104,32 @@ void ComputeShader::use() {
     glGetIntegerv(GL_CURRENT_PROGRAM, &currentProgram);
 
     if (currentProgram != ID) {
-        std::cerr << "ERROR: Failed to activate compute shader (active ID="
-            << currentProgram << ", expected ID=" << ID << ")" << std::endl;
+        std::cerr << "ERROR: Failed to activate compute shader (active ID="<< currentProgram << ", expected ID=" << ID << ")" << std::endl;
     }
 
     // Check for errors after activation
     err = glGetError();
     if (err != GL_NO_ERROR) {
-        std::cerr << "OpenGL error after using compute shader: 0x"
-            << std::hex << err << std::dec << std::endl;
+        std::cerr << "OpenGL error after using compute shader: 0x"<< std::hex << err << std::dec << std::endl;
     }
 }
 
 void ComputeShader::dispatch(unsigned int numGroupsX, unsigned int numGroupsY, unsigned int numGroupsZ) {
-    // Verify shader is active
+    //Verify shader is active
     GLint currentProgram = 0;
     glGetIntegerv(GL_CURRENT_PROGRAM, &currentProgram);
 
     if (currentProgram != ID) {
-        std::cerr << "ERROR: Cannot dispatch - wrong shader active (active ID="
-            << currentProgram << ", compute shader ID=" << ID << ")" << std::endl;
+        std::cerr << "ERROR: Cannot dispatch - wrong shader active (active ID="<< currentProgram << ", compute shader ID=" << ID << ")" << std::endl;
         return;
     }
 
     glDispatchCompute(numGroupsX, numGroupsY, numGroupsZ);
 
-    // Check for errors
+    //Check for errors
     GLenum err = glGetError();
     if (err != GL_NO_ERROR) {
-        std::cerr << "OpenGL error after dispatch: 0x"
-            << std::hex << err << std::dec << std::endl;
+        std::cerr << "OpenGL error after dispatch: 0x"<< std::hex << err << std::dec << std::endl;
     }
 }
 

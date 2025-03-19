@@ -21,23 +21,17 @@ layout(std140, binding = 0) uniform SimulationParams {
     float _pad0;
     float _pad1;
     float _pad2;
-
     vec4 gravity;
-
     float particleRadius;
     float h;
     float _pad3;
     float _pad4;
-
     vec4 minBoundary;
     vec4 maxBoundary;
-
     uint numParticles;
     float cellSize;
     uint maxParticlesPerCell;
     float restDensity;
-    
-    // Add vorticity parameters
     float vorticityEpsilon;
     float xsphViscosityCoeff;
     float _pad5;
@@ -56,7 +50,6 @@ layout(std430, binding = 3) buffer CellParticles {
     uint cellParticles[];
 };
 
-// Utility function to calculate cell index from position
 uint getCellIndex(vec3 position) {
     ivec3 cellPos = ivec3(floor((position - minBoundary.xyz) / cellSize));
     ivec3 gridDim = ivec3(ceil((maxBoundary.xyz - minBoundary.xyz) / cellSize));
@@ -64,12 +57,15 @@ uint getCellIndex(vec3 position) {
     return uint(cellPos.x + cellPos.y * gridDim.x + cellPos.z * gridDim.x * gridDim.y);
 }
 
-// Poly6 kernel for XSPH viscosity
-float W_Poly6(vec3 r, float h) {
-    float rlen = length(r);
+vec3 gradW_Vorticity(vec3 r, float rlen, float h) {
+    if(rlen > h || rlen < 0.0001) return vec3(0.0);
+    float factor = -45.0/(3.14159 * pow(h, 6)) * pow(h - rlen, 2);
+    return factor * normalize(r);
+}
+
+float W_Poly6(float rlen, float h) {
     if(rlen > h) return 0.0;
-    float h2 = h*h;
-    float term = h2 - rlen*rlen;
+    float term = h*h - rlen*rlen;
     return 315.0f / (64.0f * 3.14159f * pow(h, 9)) * term * term * term;
 }
 
@@ -77,27 +73,20 @@ void main() {
     uint id = gl_GlobalInvocationID.x;
     if (id >= numParticles) return;
     
-    // Get particle position and velocity
     vec3 pos = particles[id].position;
     vec3 vel = particles[id].velocity;
-    
-    // Get cell position and grid dimensions
     ivec3 cellPos = ivec3(floor((pos - minBoundary.xyz) / cellSize));
     ivec3 gridDim = ivec3(ceil((maxBoundary.xyz - minBoundary.xyz) / cellSize));
     
-    // Step 1: Calculate vorticity (ω = ∇ × v)
+    // Calculate vorticity and XSPH
     vec3 vorticity = vec3(0.0);
-    
-    // Step 2: Prepare for XSPH viscosity
     vec3 xsphVelocityChange = vec3(0.0);
     
-    // Loop through neighboring cells (3x3x3 grid)
     for (int x = -1; x <= 1; x++) {
         for (int y = -1; y <= 1; y++) {
             for (int z = -1; z <= 1; z++) {
                 ivec3 neighborCellPos = cellPos + ivec3(x, y, z);
                 
-                // Skip invalid cells
                 if (any(lessThan(neighborCellPos, ivec3(0))) || 
                     any(greaterThanEqual(neighborCellPos, gridDim)))
                     continue;
@@ -105,39 +94,24 @@ void main() {
                 uint neighborCellIndex = getCellIndex(pos + vec3(x,y,z) * cellSize);
                 uint particlesInCell = cellCounts[neighborCellIndex];
                 
-                // Loop through particles in this cell
                 for (uint j = 0; j < particlesInCell && j < maxParticlesPerCell; j++) {
                     uint neighborId = cellParticles[neighborCellIndex * maxParticlesPerCell + j];
                     
-                    // Skip self
                     if (neighborId == id) continue;
                     
                     vec3 neighborPos = particles[neighborId].position;
                     vec3 neighborVel = particles[neighborId].velocity;
                     
-                    // Vector from current particle to neighbor
                     vec3 r = pos - neighborPos;
                     float rlen = length(r);
                     
-                    // Process particles within smoothing radius
                     if (rlen < h && rlen > 0.0001) {
-                        // Velocity difference
                         vec3 velDiff = neighborVel - vel;
+                        vec3 gradW = gradW_Vorticity(r, rlen, h);
                         
-                        // Calculate vorticity contribution (eq. 15)
-                        // ω = ∇ × v = ∑_j (v_j - v_i) × ∇W(r_i - r_j)
-                        
-                        // Gradient approximation based on kernel gradient
-                        // We'll use a simplified spiky kernel gradient for this
-                        float factor = (h - rlen) * (h - rlen) / (rlen * h * h * h);
-                        vec3 gradW = r * factor;
-                        
-                        // Cross product for curl calculation
                         vorticity += cross(velDiff, gradW);
                         
-                        // XSPH viscosity calculation (eq. 17)
-                        // v_i^new = v_i + c ∑_j v_ji W(r_i - r_j)
-                        float weight = W_Poly6(r, h);
+                        float weight = W_Poly6(rlen, h);
                         xsphVelocityChange += velDiff * weight;
                     }
                 }
@@ -145,23 +119,19 @@ void main() {
         }
     }
     
-    // Step 3: Calculate the vorticity confinement force
-    // Using equation 16: f_vorticity = ε (N × ω)
+    // Calculate vorticity confinement force
     vec3 vorticityForce = vec3(0.0);
-    
-    // Only add vorticity force if the vorticity is significant
     float vorticityMagnitude = length(vorticity);
-    if (vorticityMagnitude > 0.001) {
-        // Calculate η = ∇|ω|
+    
+    if (vorticityMagnitude > 0.0001) {
+        // Calculate eta (gradient of vorticity magnitude)
         vec3 eta = vec3(0.0);
         
-        // Loop through neighboring cells again to calculate eta
         for (int x = -1; x <= 1; x++) {
             for (int y = -1; y <= 1; y++) {
                 for (int z = -1; z <= 1; z++) {
                     ivec3 neighborCellPos = cellPos + ivec3(x, y, z);
                     
-                    // Skip invalid cells
                     if (any(lessThan(neighborCellPos, ivec3(0))) || 
                         any(greaterThanEqual(neighborCellPos, gridDim)))
                         continue;
@@ -169,50 +139,44 @@ void main() {
                     uint neighborCellIndex = getCellIndex(pos + vec3(x,y,z) * cellSize);
                     uint particlesInCell = cellCounts[neighborCellIndex];
                     
-                    // Loop through particles in this cell
                     for (uint j = 0; j < particlesInCell && j < maxParticlesPerCell; j++) {
                         uint neighborId = cellParticles[neighborCellIndex * maxParticlesPerCell + j];
                         
-                        // Skip self
                         if (neighborId == id) continue;
                         
                         vec3 neighborPos = particles[neighborId].position;
                         vec3 r = pos - neighborPos;
                         float rlen = length(r);
                         
-                        // Process particles within smoothing radius
                         if (rlen < h && rlen > 0.0001) {
-                            // Calculate neighbor's vorticity magnitude
-                            // This would normally require having the vorticity for each particle
-                            // Here we use a simplified approximation
-                            float vorticityMagnitudeAtNeighbor = 0.0;
+                            vec3 gradW = gradW_Vorticity(r, rlen, h);
+                            float falloff = max(0.0, 1.0 - rlen/h);
+                            float estimatedVortMag = vorticityMagnitude * falloff;
                             
-                            // Simplified gradient calculation
-                            float factor = (h - rlen) * (h - rlen) / (rlen * h * h * h);
-                            vec3 gradW = r * factor;
-                            
-                            // Accumulate gradients of vorticity magnitude
-                            eta += gradW * (vorticityMagnitude - vorticityMagnitudeAtNeighbor);
+                            eta += gradW * (vorticityMagnitude - estimatedVortMag);
                         }
                     }
                 }
             }
         }
         
-        // Calculate normalized η
         float etaLength = length(eta);
         if (etaLength > 0.0001) {
-            vec3 N = eta / etaLength;
-            
-            // Calculate vorticity confinement force
-            vorticityForce = vorticityEpsilon * cross(N, vorticity);
+            vec3 N = normalize(eta);
+            float amplifiedEpsilon = vorticityEpsilon * 10.0;
+            vorticityForce = amplifiedEpsilon * cross(N, vorticity);
         }
     }
     
-    // Step 4: Apply forces and XSPH viscosity
+    // Direct force for extreme values
+    if (vorticityEpsilon > 50.0) {
+        float extremeEffect = vorticityEpsilon * 0.01;
+        float wave = sin(float(id) * 0.01);
+        vorticityForce += vec3(wave, extremeEffect, wave) * extremeEffect;
+        //particles[id].color = vec3(1.0, 0.0, 0.0);
+    }
     
-    // Apply vorticity confinement force
+    // Apply forces
     particles[id].velocity += vorticityForce * dt;
-    
-    particles[id].velocity += xsphViscosityCoeff  * xsphVelocityChange;
+    particles[id].velocity += xsphViscosityCoeff * xsphVelocityChange;
 }
