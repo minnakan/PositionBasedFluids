@@ -4,6 +4,12 @@
 #include <glm/glm.hpp>
 #include "PBFComputeSystem.h"
 
+enum class SceneType {
+    DamBreak = 0,            
+    WaterContainer = 1,
+    DropBlock = 2
+};
+
 class PBFSystem {
 public:
     // Public simulation parameters for easy access
@@ -20,6 +26,7 @@ public:
     float vorticityEpsilon;
     float xsphViscosityCoeff;
     bool enableDebugInfo;
+    SceneType currentScene;
 
     // Public particle data for rendering
     std::vector<Particle> particles;
@@ -28,7 +35,10 @@ public:
     ~PBFSystem();
 
     // Initialize the simulation with a simple demo scene
-    void initScene();
+    void initScene(SceneType sceneType = SceneType::DamBreak);
+    void createDamBreakScene();
+    void createWaterContainerScene();
+    void dropWaterBlock();
 
     // Advance the simulation by one time step
     void step();
@@ -42,6 +52,7 @@ private:
     PBFComputeSystem* computeSystem;
     int frameCount;
     int warmupFrames;
+    
 
 
 };

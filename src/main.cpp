@@ -28,9 +28,9 @@ const unsigned int SCR_WIDTH = 1280;
 const unsigned int SCR_HEIGHT = 720;
 
 Camera camera(
-    glm::vec3(0.0f, 5.0f, 15.0f),  // position
+    glm::vec3(-25.0f, 10.0f, 0.0f),  // position
     glm::vec3(0.0f, 1.0f, 0.0f),   // world up
-    -90.0f,                        // yaw (turn left/right)
+    0.0f,                        // yaw (turn left/right)
     -20.0f                         // pitch (angle down slightly)
 );
 float lastX = SCR_WIDTH / 2.0f;
@@ -59,9 +59,30 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
         glfwSetWindowShouldClose(window, GLFW_TRUE);
 
-    // Reset simulation with R key
-    if (key == GLFW_KEY_R && action == GLFW_PRESS)
-        pbf.initScene();
+    if (action == GLFW_PRESS) {
+        switch (key) {
+        case GLFW_KEY_1: {
+            std::cout << "Switching to Dam Break scene\n";
+            pbf.initScene(SceneType::DamBreak);
+            break;
+        }
+        case GLFW_KEY_2: {
+            std::cout << "Switching to Water Container scene\n";
+            pbf.initScene(SceneType::WaterContainer);
+            break;
+        }
+        case GLFW_KEY_3: {
+            std::cout << "Switching to Water Container with Dropping Block scene\n";
+            pbf.initScene(SceneType::DropBlock);
+            break;
+        }
+        case GLFW_KEY_R: {
+            std::cout << "Resetting current scene\n";
+            pbf.initScene(pbf.currentScene);
+            break;
+        }
+        }
+    }
 }
 
 int main(void)
@@ -112,7 +133,7 @@ int main(void)
     // Initialize particle buffers and the PBF system
     initParticleBuffers();
     initGroundPlane();
-    pbf.initScene();
+    pbf.initScene(SceneType::DamBreak);
 
     // Main rendering loop
     while (!glfwWindowShouldClose(window))
