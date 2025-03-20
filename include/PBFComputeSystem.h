@@ -20,7 +20,7 @@ struct Particle {
     glm::vec2 padding5;
 };
 
-// This struct must match the layout in your compute shader
+//struct must match the layout in your compute shader
 struct SimParams {
     // Group 1
     float dt;
@@ -47,6 +47,7 @@ struct SimParams {
     unsigned int maxParticlesPerCell;
     float restDensity;
 
+    //Group 6
     float vorticityEpsilon;
     float xsphViscosityCoeff;
     float _pad5;
@@ -92,8 +93,8 @@ private:
 
     GLuint simParamsUBO;
     GLuint particleSSBO;
-    GLuint cellCountsBuffer; // Stores count of particles per cell
-	GLuint cellParticlesBuffer; // Stores particle indices per cell
+    GLuint cellCountsBuffer; 
+	GLuint cellParticlesBuffer;
     unsigned int numParticles;
     unsigned int maxParticles;
     SimParams params;

@@ -78,7 +78,7 @@ void main() {
     ivec3 cellPos = ivec3(floor((pos - minBoundary.xyz) / cellSize));
     ivec3 gridDim = ivec3(ceil((maxBoundary.xyz - minBoundary.xyz) / cellSize));
     
-    // Calculate vorticity and XSPH
+    //vorticity and XSPH
     vec3 vorticity = vec3(0.0);
     vec3 xsphVelocityChange = vec3(0.0);
     
@@ -169,7 +169,7 @@ void main() {
     }
     
     
-    // Apply forces
+    //Apply forces
     particles[id].velocity += vorticityForce * dt;
     particles[id].velocity += xsphViscosityCoeff * xsphVelocityChange;
 }

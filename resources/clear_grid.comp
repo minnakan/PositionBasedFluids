@@ -1,4 +1,3 @@
-// In a separate "clear_grid.comp" shader:
 #version 430 core
 
 layout(local_size_x = 256) in;
@@ -37,13 +36,12 @@ layout(std430, binding = 2) buffer CellCounts {
 void main() {
     uint id = gl_GlobalInvocationID.x;
     
-    // Calculate total number of cells
+    //total number of cells
     ivec3 gridDim = ivec3(ceil((maxBoundary.xyz - minBoundary.xyz) / cellSize));
     uint totalCells = gridDim.x * gridDim.y * gridDim.z;
     
-    // Each thread clears multiple cells
-    uint cellsPerThread = (totalCells + gl_NumWorkGroups.x * gl_WorkGroupSize.x - 1) / 
-                          (gl_NumWorkGroups.x * gl_WorkGroupSize.x);
+    //clears multiple cells
+    uint cellsPerThread = (totalCells + gl_NumWorkGroups.x * gl_WorkGroupSize.x - 1) / (gl_NumWorkGroups.x * gl_WorkGroupSize.x);
     
     for (uint i = 0; i < cellsPerThread; i++) {
         uint cellId = id * cellsPerThread + i;

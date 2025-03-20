@@ -9,14 +9,14 @@ uniform vec3 viewPos;
 
 void main()
 {
-    // Calculate the sphere using point sprite technique
+    //point sprite technique
     vec2 coord = gl_PointCoord * 2.0 - 1.0;
     float radius = dot(coord, coord);
     if (radius > 1.0) {
         discard;
     }
     
-    // Use a lighter version of the particle color
+    //lighter version of the particle color
     vec3 lighterColor = mix(Color, vec3(1.0), 0.25);
     FragColor = vec4(lighterColor, 1.0);
 }

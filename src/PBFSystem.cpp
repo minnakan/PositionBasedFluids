@@ -19,9 +19,9 @@ PBFSystem::PBFSystem()
 	cellSize = h;
 	maxParticlesPerCell = 64;
 
-    restDensity = 250.0f;
+    restDensity = 125.0f;
 
-    vorticityEpsilon = 0.01f;
+    vorticityEpsilon = 0.008f;
     xsphViscosityCoeff = 0.01f;
 
     computeSystem = nullptr;
@@ -263,7 +263,7 @@ void PBFSystem::dropWaterBlock()
     const float dropBlockWidth = 8.0f;
     const float dropBlockHeight = 16.0f;
     const float dropBlockDepth = 8.0f;
-    const float dropHeight = 20.0f;
+    const float dropHeight = 40.0f;
 
 
     const float spacing = particleRadius * 2.1f;
@@ -271,7 +271,7 @@ void PBFSystem::dropWaterBlock()
     const float baseY = minBoundary.y + particleRadius * 2.0f;
     const float centerZ = (minBoundary.z + maxBoundary.z) * 0.5f;
 
-    // Find the highest existing water particle to place block above it
+    //highest existing water particle to place block above it
     float highestY = baseY;
     for (const auto& particle : particles) {
         highestY = std::max(highestY, particle.position.y);
@@ -281,7 +281,7 @@ void PBFSystem::dropWaterBlock()
     const float dropBlockStartY = highestY + dropHeight;
     const float dropBlockStartZ = centerZ - dropBlockDepth * 0.5f;
 
-    // Calculate number of particles in drop block
+
     const int dropNumX = static_cast<int>(dropBlockWidth / spacing);
     const int dropNumY = static_cast<int>(dropBlockHeight / spacing);
     const int dropNumZ = static_cast<int>(dropBlockDepth / spacing);

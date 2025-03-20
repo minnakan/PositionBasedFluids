@@ -55,7 +55,6 @@ layout(std430, binding = 3) buffer CellParticles {
     uint cellParticles[];
 };
 
-// Spiky kernel gradient for pressure forces
 vec3 gradW_Spiky(vec3 r, float rlen, float h) {
     if(rlen > h || rlen < 0.0001) return vec3(0.0);
     
@@ -66,14 +65,12 @@ vec3 gradW_Spiky(vec3 r, float rlen, float h) {
     return factor * r / max(rlen, 0.0001);
 }
 
-// Poly6 kernel for artificial pressure term
 float W_Poly6(float r, float h) {
     if(r > h) return 0.0;
     float term = h*h - r*r;
     return 315.0f / (64.0f * 3.14159f * pow(h, 9)) * term * term * term;
 }
 
-// Utility function to calculate cell index from position
 uint getCellIndex(vec3 position) {
     ivec3 cellPos = ivec3(floor((position - minBoundary.xyz) / cellSize));
     ivec3 gridDim = ivec3(ceil((maxBoundary.xyz - minBoundary.xyz) / cellSize));
@@ -81,41 +78,34 @@ uint getCellIndex(vec3 position) {
     return uint(cellPos.x + cellPos.y * gridDim.x + cellPos.z * gridDim.x * gridDim.y);
 }
 
-// Improved wall repulsion function
 vec3 calculateWallRepulsion(vec3 pos) {
     vec3 repulsion = vec3(0.0);
-    float wallRepulsionStrength = 1.0; // Reduced strength to avoid excessive forces
-    float maxInfluenceDistance = 1.5 * particleRadius; // Tighter influence zone
+    float wallRepulsionStrength = 1.0;
+    float maxInfluenceDistance = 1.5 * particleRadius;
     
-    // Floor repulsion
     float distToFloor = pos.y - (minBoundary.y + particleRadius);
     if (distToFloor < maxInfluenceDistance) {
         float repulsionForce = (1.0 - distToFloor/maxInfluenceDistance) * wallRepulsionStrength;
         repulsion.y += repulsionForce;
     }
-    
-    // Left wall repulsion
     float distToLeftWall = pos.x - (minBoundary.x + particleRadius);
     if (distToLeftWall < maxInfluenceDistance) {
         float repulsionForce = (1.0 - distToLeftWall/maxInfluenceDistance) * wallRepulsionStrength;
         repulsion.x += repulsionForce;
     }
     
-    // Right wall repulsion
     float distToRightWall = (maxBoundary.x - particleRadius) - pos.x;
     if (distToRightWall < maxInfluenceDistance) {
         float repulsionForce = (1.0 - distToRightWall/maxInfluenceDistance) * wallRepulsionStrength;
         repulsion.x -= repulsionForce;
     }
     
-    // Front wall repulsion
     float distToFrontWall = pos.z - (minBoundary.z + particleRadius);
     if (distToFrontWall < maxInfluenceDistance) {
         float repulsionForce = (1.0 - distToFrontWall/maxInfluenceDistance) * wallRepulsionStrength;
         repulsion.z += repulsionForce;
     }
     
-    // Back wall repulsion
     float distToBackWall = (maxBoundary.z - particleRadius) - pos.z;
     if (distToBackWall < maxInfluenceDistance) {
         float repulsionForce = (1.0 - distToBackWall/maxInfluenceDistance) * wallRepulsionStrength;
@@ -129,23 +119,18 @@ void main() {
     uint id = gl_GlobalInvocationID.x;
     if (id >= numParticles) return;
     
-    // Get particle position
     vec3 pos = particles[id].predictedPos;
     
-    // Get cell position and grid dimensions
     ivec3 cellPos = ivec3(floor((pos - minBoundary.xyz) / cellSize));
     ivec3 gridDim = ivec3(ceil((maxBoundary.xyz - minBoundary.xyz) / cellSize));
     
-    // Initialize position change
     vec3 deltaPos = vec3(0.0);
     
-    // Loop through neighboring cells (3x3x3 grid)
     for (int x = -1; x <= 1; x++) {
         for (int y = -1; y <= 1; y++) {
             for (int z = -1; z <= 1; z++) {
                 ivec3 neighborCellPos = cellPos + ivec3(x, y, z);
                 
-                // Skip invalid cells
                 if (any(lessThan(neighborCellPos, ivec3(0))) || 
                     any(greaterThanEqual(neighborCellPos, gridDim)))
                     continue;
@@ -153,26 +138,20 @@ void main() {
                 uint neighborCellIndex = getCellIndex(pos + vec3(x,y,z) * cellSize);
                 uint particlesInCell = cellCounts[neighborCellIndex];
                 
-                // Loop through particles in this cell
                 for (uint j = 0; j < particlesInCell && j < maxParticlesPerCell; j++) {
                     uint neighborId = cellParticles[neighborCellIndex * maxParticlesPerCell + j];
                     
-                    // Skip self
                     if (neighborId == id) continue;
                     
                     vec3 neighborPos = particles[neighborId].predictedPos;
                     vec3 diff = pos - neighborPos;
                     float dist = length(diff);
                     
-                    // Process particles within kernel radius
                     if (dist < h && dist > 0.0001) {
-                        // Calculate gradient of Spiky kernel
                         vec3 gradW = gradW_Spiky(diff, dist, h);
-                        
-                        // Get lambda values from both particles
                         float lambdaSum = particles[id].lambda + particles[neighborId].lambda;
                         
-                        // Calculate artificial pressure term (s_corr) from equation 13
+                        //s_corr equation 13
                         float k = 0.1;
                         float n = 4.0;     
                         float deltaq = 0.2 * h;
@@ -180,11 +159,8 @@ void main() {
                         float wij = W_Poly6(dist, h);
                         float wdeltaq = W_Poly6(deltaq, h);
                         
-                        // Prevent division by zero
                         if (wdeltaq > 0.0) {
                             float scorr = -k * pow(wij / wdeltaq, n);
-                            
-                            // Calculate particle position correction
                             deltaPos += (lambdaSum + scorr) * gradW;
                         }
                     }
@@ -193,33 +169,26 @@ void main() {
         }
     }
     
-    // Scale by 1/restDensity
+    
     deltaPos /= restDensity;
     
-    // Add wall repulsion forces with reduced effect
     vec3 wallRepulsion = calculateWallRepulsion(pos);
-    deltaPos += wallRepulsion * 0.010; // Significantly reduced scale factor
+    deltaPos += wallRepulsion * 0.010;
     
-    // Apply position correction
     particles[id].predictedPos += deltaPos;
-    
-    // Apply boundary constraints more firmly (hard constraints)
     float safetyMargin = 0.1 * particleRadius;
     
-    // Floor constraint - more definitive
+
     if (particles[id].predictedPos.y < minBoundary.y + particleRadius) {
         particles[id].predictedPos.y = minBoundary.y + particleRadius + safetyMargin;
     }
     
-    // X-axis boundaries (left and right walls)
     if (particles[id].predictedPos.x < minBoundary.x + particleRadius) {
         particles[id].predictedPos.x = minBoundary.x + particleRadius + safetyMargin;
     }
     if (particles[id].predictedPos.x > maxBoundary.x - particleRadius) {
         particles[id].predictedPos.x = maxBoundary.x - particleRadius - safetyMargin;
     }
-    
-    // Z-axis boundaries (front and back walls)
     if (particles[id].predictedPos.z < minBoundary.z + particleRadius) {
         particles[id].predictedPos.z = minBoundary.z + particleRadius + safetyMargin;
     }

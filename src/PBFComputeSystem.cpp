@@ -1,7 +1,7 @@
 ﻿#include "PBFComputeSystem.h"
 #include <iostream>
 #include <iomanip>
-#include <sstream> // for better logs
+#include <sstream>
 
 PBFComputeSystem::PBFComputeSystem(): externalForcesShader(nullptr), constructGridShader(nullptr), clearGridShader(nullptr), densityShader(nullptr), positionUpdateShader(nullptr), vorticityViscosityShader(nullptr), velocityUpdateShader(nullptr), simParamsUBO(0),particleSSBO(0),numParticles(0),maxParticles(0)
 {
@@ -97,7 +97,7 @@ void PBFComputeSystem::updateSimulationParams(float dt,const glm::vec4& gravity,
 	params.xsphViscosityCoeff = xsphViscosityCoeff;
 
     
-    // Upload to GPU
+    //Upload to GPU
     glBindBuffer(GL_UNIFORM_BUFFER, simParamsUBO);
     glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(SimParams), &params);
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
@@ -179,11 +179,11 @@ void PBFComputeSystem::step() {
 }
 
 void PBFComputeSystem::applyExternalForces() {
-    // Calculate # of work groups
+    //work groups
     unsigned int numGroups = (numParticles + 255) / 256;
     if (numGroups == 0) numGroups = 1;
 
-    // Update simParamsUBO
+    //Update simParamsUBO
     glBindBuffer(GL_UNIFORM_BUFFER, simParamsUBO);
     glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(SimParams), &params);
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
@@ -191,88 +191,72 @@ void PBFComputeSystem::applyExternalForces() {
     // Activate the external forces compute shader
     glUseProgram(externalForcesShader->ID);
 
-    // Bind buffers
+    //Bind buffers
     glBindBufferBase(GL_UNIFORM_BUFFER, 0, 0);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, 0);
     glBindBufferBase(GL_UNIFORM_BUFFER, 0, simParamsUBO);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, particleSSBO);
 
-    // Dispatch compute shader
+    //Dispatch
     glDispatchCompute(numGroups, 1, 1);
 
-    // Memory barrier to ensure compute shader has completed
+    //ensure compute shader has completed
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 }
 
 void PBFComputeSystem::initializeGrid() {
-    // Calculate grid dimensions
+
     glm::vec3 domain = params.maxBoundary - params.minBoundary;
     glm::ivec3 gridDim = glm::ivec3(glm::ceil(domain / params.cellSize));
 
-    // Calculate total cells
     int totalCells = gridDim.x * gridDim.y * gridDim.z;
 
     std::cout << "[PBFComputeSystem] Grid dimensions: " << gridDim.x << "x"<< gridDim.y << "x" << gridDim.z << " (" << totalCells << " cells)\n";
 
-    // Create buffer for cell counts
     glGenBuffers(1, &cellCountsBuffer);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellCountsBuffer);
     glBufferData(GL_SHADER_STORAGE_BUFFER, totalCells * sizeof(GLuint), nullptr, GL_DYNAMIC_READ);
 
-    // Create buffer for cell particles
     glGenBuffers(1, &cellParticlesBuffer);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, cellParticlesBuffer);
     glBufferData(GL_SHADER_STORAGE_BUFFER,totalCells * params.maxParticlesPerCell * sizeof(GLuint),nullptr, GL_DYNAMIC_COPY);
 
-    // Unbind
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
 void PBFComputeSystem::findNeighbors() {
-    // Calculate grid dimensions
     glm::vec3 domain = params.maxBoundary - params.minBoundary;
     glm::ivec3 gridDim = glm::ivec3(glm::ceil(domain / params.cellSize));
     int totalCells = gridDim.x * gridDim.y * gridDim.z;
 
-    // Calculate work groups for cell clearing
     unsigned int clearGroups = (totalCells + 255) / 256;
     if (clearGroups == 0) clearGroups = 1;
 
-    // Calculate work groups for particle processing
     unsigned int particleGroups = (numParticles + 255) / 256;
     if (particleGroups == 0) particleGroups = 1;
 
-    // Make sure numParticles is up to date in the simulation parameters
     params.numParticles = numParticles;
     glBindBuffer(GL_UNIFORM_BUFFER, simParamsUBO);
     glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(SimParams), &params);
 
-    // STEP 1: Clear the grid cell counts
     clearGridShader->use();
 
-    // Bind the necessary buffers
     glBindBufferBase(GL_UNIFORM_BUFFER, 0, simParamsUBO);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, cellCountsBuffer);
 
-    // Dispatch the clear grid shader
     glDispatchCompute(clearGroups, 1, 1);
 
-    // Ensure clearing has completed before populating
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-    // STEP 2: Populate the grid with particles
     constructGridShader->use();
 
-    // Bind the necessary buffers
     glBindBufferBase(GL_UNIFORM_BUFFER, 0, simParamsUBO);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, particleSSBO);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, cellCountsBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, cellParticlesBuffer);
 
-    // Dispatch the construct grid shader
     glDispatchCompute(particleGroups, 1, 1);
 
-    // Final memory barrier to ensure all writes have completed
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 }
 
@@ -282,104 +266,80 @@ void PBFComputeSystem::calculateDensity() {
         return;
     }
 
-    // Calculate # of work groups
     unsigned int numGroups = (numParticles + 255) / 256;
     if (numGroups == 0) numGroups = 1;
 
-    // Ensure simulation params are up to date
     glBindBuffer(GL_UNIFORM_BUFFER, simParamsUBO);
     glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(SimParams), &params);
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
-    // Activate the density compute shader
     densityShader->use();
 
-    // Bind buffers
     glBindBufferBase(GL_UNIFORM_BUFFER, 0, simParamsUBO);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, particleSSBO);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, cellCountsBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, cellParticlesBuffer);
 
-    // Dispatch compute shader
     glDispatchCompute(numGroups, 1, 1);
 
-    // Memory barrier to ensure compute shader has completed
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 }
 
 void PBFComputeSystem::applyPositionUpdate() {
-    // Calculate # of work groups
     unsigned int numGroups = (numParticles + 255) / 256;
     if (numGroups == 0) numGroups = 1;
 
-    // Ensure simulation params are up to date
     glBindBuffer(GL_UNIFORM_BUFFER, simParamsUBO);
     glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(SimParams), &params);
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
-    // Activate the position update compute shader
     positionUpdateShader->use();
 
-    // Bind buffers
     glBindBufferBase(GL_UNIFORM_BUFFER, 0, simParamsUBO);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, particleSSBO);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, cellCountsBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, cellParticlesBuffer);
 
-    // Dispatch compute shader
     glDispatchCompute(numGroups, 1, 1);
 
-    // Memory barrier to ensure compute shader has completed
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 }
 
 void PBFComputeSystem::applyVorticityViscosity() {
-    // Calculate # of work groups
     unsigned int numGroups = (numParticles + 255) / 256;
     if (numGroups == 0) numGroups = 1;
 
-    // Ensure simulation params are up to date
     glBindBuffer(GL_UNIFORM_BUFFER, simParamsUBO);
     glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(SimParams), &params);
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
-    // Activate the vorticity and viscosity compute shader
     vorticityViscosityShader->use();
 
-    // Bind buffers
     glBindBufferBase(GL_UNIFORM_BUFFER, 0, simParamsUBO);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, particleSSBO);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, cellCountsBuffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, cellParticlesBuffer);
 
-    // Dispatch compute shader
     glDispatchCompute(numGroups, 1, 1);
 
-    // Memory barrier to ensure compute shader has completed
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 }
 
 void PBFComputeSystem::updateVelocity() {
-    // Calculate # of work groups
     unsigned int numGroups = (numParticles + 255) / 256;
     if (numGroups == 0) numGroups = 1;
 
-    // Ensure simulation params are up to date
     glBindBuffer(GL_UNIFORM_BUFFER, simParamsUBO);
     glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(SimParams), &params);
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
-    // Activate the velocity update compute shader
     velocityUpdateShader->use();
 
-    // Bind buffers
     glBindBufferBase(GL_UNIFORM_BUFFER, 0, simParamsUBO);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, particleSSBO);
 
-    // Dispatch compute shader
     glDispatchCompute(numGroups, 1, 1);
 
-    // Memory barrier to ensure compute shader has completed
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 }
 
@@ -388,7 +348,6 @@ bool PBFComputeSystem::checkComputeShaderSupport() {
     GLint maxComputeWorkGroupSize[3] = { 0 };
     GLint maxComputeWorkGroupInvocations = 0;
 
-    // Check if compute shaders are supported
     GLint numShaderTypes = 0;
     glGetIntegerv(GL_NUM_SHADING_LANGUAGE_VERSIONS, &numShaderTypes);
 
@@ -397,39 +356,24 @@ bool PBFComputeSystem::checkComputeShaderSupport() {
     std::cout << "GL_RENDERER: " << glGetString(GL_RENDERER) << "\n";
     std::cout << "GL_VERSION:  " << glGetString(GL_VERSION) << "\n";
 
-    // Get max work group counts
     glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 0, &maxComputeWorkGroupCount[0]);
     glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 1, &maxComputeWorkGroupCount[1]);
     glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 2, &maxComputeWorkGroupCount[2]);
 
-    // Get max work group sizes
     glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_SIZE, 0, &maxComputeWorkGroupSize[0]);
     glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_SIZE, 1, &maxComputeWorkGroupSize[1]);
     glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_SIZE, 2, &maxComputeWorkGroupSize[2]);
 
-    // Get max work group invocations
     glGetIntegerv(GL_MAX_COMPUTE_WORK_GROUP_INVOCATIONS, &maxComputeWorkGroupInvocations);
 
-    std::cout << "Max compute work group count: "
-        << maxComputeWorkGroupCount[0] << ", "
-        << maxComputeWorkGroupCount[1] << ", "
-        << maxComputeWorkGroupCount[2] << "\n";
+    std::cout << "Max compute work group count: "<< maxComputeWorkGroupCount[0] << ", "<< maxComputeWorkGroupCount[1] << ", "<< maxComputeWorkGroupCount[2] << "\n";
+    std::cout << "Max compute work group size:  "<< maxComputeWorkGroupSize[0] << ", "<< maxComputeWorkGroupSize[1] << ", "<< maxComputeWorkGroupSize[2] << "\n";
+    std::cout << "Max compute work group invocations: "<< maxComputeWorkGroupInvocations << "\n";
 
-    std::cout << "Max compute work group size:  "
-        << maxComputeWorkGroupSize[0] << ", "
-        << maxComputeWorkGroupSize[1] << ", "
-        << maxComputeWorkGroupSize[2] << "\n";
 
-    std::cout << "Max compute work group invocations: "
-        << maxComputeWorkGroupInvocations << "\n";
-
-    // -----------------------------------------------------------------------
-    // Add uniform-related queries here:
-    // -----------------------------------------------------------------------
     GLint maxComputeUniformBlocks = 0;
     glGetIntegerv(GL_MAX_COMPUTE_UNIFORM_BLOCKS, &maxComputeUniformBlocks);
-    std::cout << "Max compute uniform blocks: "
-        << maxComputeUniformBlocks << "\n";
+    std::cout << "Max compute uniform blocks: "<< maxComputeUniformBlocks << "\n";
 
     GLint maxComputeUniformComponents = 0;
     glGetIntegerv(GL_MAX_COMPUTE_UNIFORM_COMPONENTS, &maxComputeUniformComponents);
@@ -438,37 +382,26 @@ bool PBFComputeSystem::checkComputeShaderSupport() {
 
     GLint maxUniformBlockSize = 0;
     glGetIntegerv(GL_MAX_UNIFORM_BLOCK_SIZE, &maxUniformBlockSize);
-    std::cout << "Max uniform block size (bytes): "
-        << maxUniformBlockSize << "\n";
+    std::cout << "Max uniform block size (bytes): "<< maxUniformBlockSize << "\n";
 
-    // You might also want to see how many UBO binding points you have in total:
     GLint maxUniformBufferBindings = 0;
     glGetIntegerv(GL_MAX_UNIFORM_BUFFER_BINDINGS, &maxUniformBufferBindings);
-    std::cout << "Max uniform buffer bindings: "
-        << maxUniformBufferBindings << "\n";
+    std::cout << "Max uniform buffer bindings: "<< maxUniformBufferBindings << "\n";
 
-    // If you need maximum SSBO bindings or maximum SSBO size:
     GLint maxShaderStorageBufferBindings = 0;
     glGetIntegerv(GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS, &maxShaderStorageBufferBindings);
-    std::cout << "Max shader storage buffer bindings: "
-        << maxShaderStorageBufferBindings << "\n";
+    std::cout << "Max shader storage buffer bindings: "<< maxShaderStorageBufferBindings << "\n";
 
     GLint maxShaderStorageBlockSize = 0;
     glGetIntegerv(GL_MAX_SHADER_STORAGE_BLOCK_SIZE, &maxShaderStorageBlockSize);
-    std::cout << "Max shader storage block size (bytes): "
-        << maxShaderStorageBlockSize << "\n";
+    std::cout << "Max shader storage block size (bytes): "<< maxShaderStorageBlockSize << "\n";
 
-    // -----------------------------------------------------------------------
-    // Determine overall compute support
-    // -----------------------------------------------------------------------
     bool supported = (maxComputeWorkGroupSize[0] > 0);
     std::cout << "Compute shaders supported: " << (supported ? "YES" : "NO") << "\n";
 
-    // Check for any OpenGL errors
     GLenum err;
     while ((err = glGetError()) != GL_NO_ERROR) {
-        std::cerr << "OpenGL error during capability check: 0x"
-            << std::hex << err << std::dec << "\n";
+        std::cerr << "OpenGL error during capability check: 0x"<< std::hex << err << std::dec << "\n";
         supported = false;
     }
 

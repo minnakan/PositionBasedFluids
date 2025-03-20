@@ -29,9 +29,9 @@ const unsigned int SCR_HEIGHT = 720;
 
 Camera camera(
     glm::vec3(-25.0f, 10.0f, 0.0f),  // position
-    glm::vec3(0.0f, 1.0f, 0.0f),   // world up
-    0.0f,                        // yaw (turn left/right)
-    -20.0f                         // pitch (angle down slightly)
+    glm::vec3(0.0f, 1.0f, 0.0f),   //world up
+    0.0f,                        //yaw
+    -20.0f                         //pitch 
 );
 float lastX = SCR_WIDTH / 2.0f;
 float lastY = SCR_HEIGHT / 2.0f;
@@ -130,11 +130,11 @@ int main(void)
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    // Create custom shaders for sphere rendering
+    //shaders for sphere rendering
     sphereShader = new Shader(RESOURCES_PATH"vertex.vert", RESOURCES_PATH"fragment.frag");
     planeShader = new Shader(RESOURCES_PATH"plane.vert", RESOURCES_PATH"plane.frag");
 
-    // Initialize particle buffers and the PBF system
+    //particle buffers and the PBF system
     initParticleBuffers();
     initGroundPlane();
     pbf.initScene(SceneType::DamBreak);
@@ -142,29 +142,27 @@ int main(void)
     // Main rendering loop
     while (!glfwWindowShouldClose(window))
     {
-        // Calculate frame time
+        //frame time
         float currentFrame = static_cast<float>(glfwGetTime());
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
 
-        // Handle input
+        //input
         processInput(window);
 
-        // Update simulation
+        //Update simulation
         pbf.step();
 
         
-        glClearColor(0.15f, 0.15f, 0.15f, 1.0f);  // Light gray, almost white
+        glClearColor(0.15f, 0.15f, 0.15f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // Prepare view and projection matrices
+        
         glm::mat4 view = camera.GetViewMatrix();
-        glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom),
-            (float)SCR_WIDTH / (float)SCR_HEIGHT,
-            0.1f, 1000.0f);
+        glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom),(float)SCR_WIDTH / (float)SCR_HEIGHT,0.1f, 1000.0f);
         glm::mat4 model = glm::mat4(1.0f);
 
-        // Draw the ground plane first
+        //ground plane
         planeShader->use();
         planeShader->setMat4("model", model);
         planeShader->setMat4("view", view);
@@ -173,7 +171,7 @@ int main(void)
         planeShader->setVec3("lightPos", 10.0f, 10.0f, 10.0f);
         drawGroundPlane(*planeShader);
 
-        // Configure particle shader and draw particles
+        //particle shader
         sphereShader->use();
         sphereShader->setMat4("model", model);
         sphereShader->setMat4("view", view);
@@ -251,21 +249,16 @@ void initParticleBuffers()
     glBindVertexArray(particleVAO);
     glBindBuffer(GL_ARRAY_BUFFER, particleVBO);
 
-    // We need space for position and color
     struct ParticleVertex {
         glm::vec3 position;
         glm::vec3 color;
     };
 
-    // Allocate memory for all particles
     glBufferData(GL_ARRAY_BUFFER, 10000 * sizeof(ParticleVertex), nullptr, GL_DYNAMIC_DRAW);
 
-    // Set up the vertex attributes
-    // Position attribute
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(ParticleVertex), (void*)0);
 
-    // Color attribute
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(ParticleVertex), (void*)(sizeof(glm::vec3)));
 
@@ -277,7 +270,6 @@ void drawParticles(const PBFSystem& pbf, Shader& shader)
 {
     if (pbf.particles.empty()) return;
 
-    // Create a temporary buffer containing positions and colors
     struct ParticleVertex {
         glm::vec3 position;
         glm::vec3 color;
@@ -296,10 +288,8 @@ void drawParticles(const PBFSystem& pbf, Shader& shader)
     glBindVertexArray(particleVAO);
     glBindBuffer(GL_ARRAY_BUFFER, particleVBO);
 
-    // Pass the data to OpenGL
     glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(ParticleVertex), vertices.data(), GL_DYNAMIC_DRAW);
 
-    // Draw the particles as points (the fragment shader will render them as spheres)
     shader.use();
     glDrawArrays(GL_POINTS, 0, (GLsizei)pbf.particles.size());
 
@@ -328,15 +318,12 @@ void initGroundPlane()
     glBindBuffer(GL_ARRAY_BUFFER, planeVBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(planeVertices), planeVertices, GL_STATIC_DRAW);
 
-    // Position attribute
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
 
-    // Normal attribute
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
 
-    // Texture attribute
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
 
@@ -347,10 +334,9 @@ void drawGroundPlane(Shader& shader)
 {
     shader.use();
 
-    // Set material properties
+    //material properties
     shader.setVec3("planeColor", 0.2f, 0.2f, 0.3f); // Dark blue-gray color
 
-    // Render plane
     glBindVertexArray(planeVAO);
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glBindVertexArray(0);

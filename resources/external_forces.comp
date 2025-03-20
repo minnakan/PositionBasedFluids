@@ -51,28 +51,27 @@ void main() {
     uint id = gl_GlobalInvocationID.x;
     if (id >= numParticles) return;
     
-    // Apply external forces (gravity)
+    //gravity
     particles[id].velocity += gravity.xyz * dt;
     
-    // Reset predicted position
     particles[id].predictedPos = particles[id].position;
     
-    // Update predicted position based on velocity
+    //update predicted position based on velocity
     particles[id].predictedPos += particles[id].velocity * dt;
     
-    // Simple boundary handling with bounce effect
-    float boundaryDamping = 0.5;  // Simplified damping parameter
+    //Boundary Checks
+    float boundaryDamping = 0.5; 
     
     // Simple position clamping for all boundaries
     if (particles[id].predictedPos.y < minBoundary.y + particleRadius) {
         particles[id].predictedPos.y = minBoundary.y + particleRadius;
         particles[id].velocity.y = -particles[id].velocity.y * boundaryDamping;
         
-        // Simple floor friction
+        //floor friction
         particles[id].velocity.xz *= 0.9;
     }
     
-    // X boundaries (combined checks)
+
     if (particles[id].predictedPos.x < minBoundary.x + particleRadius) {
         particles[id].predictedPos.x = minBoundary.x + particleRadius;
         particles[id].velocity.x = -particles[id].velocity.x * boundaryDamping;
@@ -82,7 +81,7 @@ void main() {
         particles[id].velocity.x = -particles[id].velocity.x * boundaryDamping;
     }
     
-    // Z boundaries (combined checks)
+
     if (particles[id].predictedPos.z < minBoundary.z + particleRadius) {
         particles[id].predictedPos.z = minBoundary.z + particleRadius;
         particles[id].velocity.z = -particles[id].velocity.z * boundaryDamping;
