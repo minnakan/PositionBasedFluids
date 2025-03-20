@@ -11,8 +11,8 @@ PBFSystem::PBFSystem()
     particleRadius = 0.2f;
     h = particleRadius * 2.5f;
 
-    minBoundary = glm::vec4(-8.0f, 0.0f, -8.0f, 0.0f);
-    maxBoundary = glm::vec4(8.0f, 100.0f, 8.0f, 0.0f);
+    minBoundary = glm::vec4(-8.0f, 0.0f, -10.0f, 0.0f);
+    maxBoundary = glm::vec4(8.0f, 100.0f, 10.0f, 0.0f);
 
     originalMinBoundary = minBoundary;
 
@@ -34,8 +34,8 @@ PBFSystem::PBFSystem()
 
     waveModeActive = false;
     waveTime = 0.0f;
-    waveAmplitude = 2.0f;
-    waveFrequency = 0.3f;
+    waveAmplitude = 4.0f;
+    waveFrequency = 0.6f;
 }
 
 PBFSystem::~PBFSystem()
@@ -98,7 +98,7 @@ void PBFSystem::step()
         minBoundary.z = originalMinBoundary.z + zDisplacement;
     }
 
-    const int numSubsteps = 2;
+    const int numSubsteps = 4;
     const float subDt = dt / numSubsteps;
     float warmupProgress = std::min(1.0f, frameCount / (float)warmupFrames);
     glm::vec4 scaledGravity = gravity * warmupProgress;
@@ -154,9 +154,9 @@ void PBFSystem::toggleWaveMode()
 void PBFSystem::createDamBreakScene()
 {
     // Dam break parameters
-    const float damWidth = 15.0f;
-    const float damHeight = 50.0f;
-    const float damDepth = 5.0f;
+    const float damWidth = 14.0f;
+    const float damHeight = 40.0f;
+    const float damDepth = 10.0f;
 
     const float leftOffset = minBoundary.x + particleRadius * 3.0f;
     const float spacing = particleRadius * 2.1f;
@@ -202,8 +202,8 @@ void PBFSystem::createWaterContainerScene()
 {
     //Container params
     const float containerWidth = 14.0f;
-    const float containerHeight = 14.0f;
-    const float containerDepth = 14.0f;
+    const float containerHeight = 25.0f;
+    const float containerDepth = 10.0f;
     const float spacing = particleRadius * 2.1f;
 
     const float centerX = (minBoundary.x + maxBoundary.x) * 0.5f;

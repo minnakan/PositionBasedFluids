@@ -47,46 +47,40 @@ layout(std430, binding = 1) buffer ParticleBuffer {
     Particle particles[];
 };
 
-// Cell counts - tracks how many particles are in each cell
+//tracks how many particles are in each cell
 layout(std430, binding = 2) buffer CellCounts {
     uint cellCounts[];
 };
 
-// Particle indices stored in each cell
+//particle indices stored in each cell
 layout(std430, binding = 3) buffer CellParticles {
     uint cellParticles[];
 };
 
-// Utility function to calculate cell index from position
+
 uint getCellIndex(vec3 position) {
-    // Calculate grid cell coordinates
+    //grid cell coordinates
     ivec3 cellPos = ivec3(floor((position - minBoundary.xyz) / cellSize));
     
-    // Calculate grid dimensions
+    //grid dimensions
     ivec3 gridDim = ivec3(ceil((maxBoundary.xyz - minBoundary.xyz) / cellSize));
-    
-    // Clamp to valid cell range
+  
     cellPos = clamp(cellPos, ivec3(0), gridDim - ivec3(1));
     
-    // Convert to 1D index
+    //1D index
     return uint(cellPos.x + cellPos.y * gridDim.x + cellPos.z * gridDim.x * gridDim.y);
 }
 
 void main() {
     uint id = gl_GlobalInvocationID.x;
     if (id >= numParticles) return;
-    
-    // Ensure counters are reset before proceeding
+   
     memoryBarrierBuffer();
     barrier();
     
-    // Get cell index for this particle
     uint cellIdx = getCellIndex(particles[id].predictedPos);
     
-    // Add particle to cell
     uint insertIndex = atomicAdd(cellCounts[cellIdx], 1);
-    
-    // Only insert if we haven't exceeded max particles per cell
     if (insertIndex < maxParticlesPerCell) {
         cellParticles[cellIdx * maxParticlesPerCell + insertIndex] = id;
     }

@@ -51,12 +51,9 @@ void main() {
     uint id = gl_GlobalInvocationID.x;
     if (id >= numParticles) return;
     
-    // Calculate position change
     vec3 positionChange = particles[id].predictedPos - particles[id].position;
     
-    // Update velocity based on position change (v = dx/dt)
     particles[id].velocity = positionChange / dt;
         
-    // Update the actual position
     particles[id].position = particles[id].predictedPos;
 }

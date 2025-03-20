@@ -173,8 +173,9 @@ void PBFComputeSystem::step() {
         calculateDensity();
         applyPositionUpdate();
     }
-    applyVorticityViscosity();
+    
     updateVelocity();
+    applyVorticityViscosity();
 }
 
 void PBFComputeSystem::applyExternalForces() {
