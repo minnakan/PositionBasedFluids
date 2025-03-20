@@ -108,6 +108,18 @@ void PBFSystem::step()
         computeSystem->step();
     }
 
+	////Density logging
+ //   std::string sceneStr;
+ //   switch (currentScene) {
+ //   case SceneType::DamBreak: sceneStr = "dambreak"; break;
+ //   case SceneType::WaterContainer: sceneStr = "container"; break;
+ //   //case SceneType::DropBlock: sceneStr = sceneStr; break;
+ //   default: sceneStr = "unknown"; break;
+ //   }
+
+ //   std::string filename = "density_" + sceneStr + ".csv";
+ //   computeSystem->recordDensityStatistics(filename);
+
     computeSystem->downloadParticles(particles);
 
     frameCount++;

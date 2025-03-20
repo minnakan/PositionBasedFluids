@@ -2,6 +2,8 @@
 #include <iostream>
 #include <iomanip>
 #include <sstream>
+#include <fstream>
+#include <algorithm>
 
 PBFComputeSystem::PBFComputeSystem(): externalForcesShader(nullptr), constructGridShader(nullptr), clearGridShader(nullptr), densityShader(nullptr), positionUpdateShader(nullptr), vorticityViscosityShader(nullptr), velocityUpdateShader(nullptr), simParamsUBO(0),particleSSBO(0),numParticles(0),maxParticles(0)
 {
@@ -407,6 +409,59 @@ bool PBFComputeSystem::checkComputeShaderSupport() {
 
     std::cout << "=== End Capability Check ===\n";
     return supported;
+}
+
+void PBFComputeSystem::recordDensityStatistics(const std::string& filename) {
+    if (numParticles == 0) {
+        std::cerr << "[PBFComputeSystem] Warning: recordDensityStatistics called with zero particles\n";
+        return;
+    }
+
+    //Download particle density data
+    std::vector<Particle> particles(numParticles);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, particleSSBO);
+    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, numParticles * sizeof(Particle), particles.data());
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    //Calculate average and maximum density
+    float totalDensity = 0.0f;
+    float maxDensity = 0.0f;
+
+    for (const auto& particle : particles) {
+        totalDensity += particle.density;
+        maxDensity = std::max(maxDensity, particle.density);
+    }
+
+    float avgDensity = totalDensity / numParticles;
+
+    // Create or append to CSV file
+    static bool fileExists = false;
+    std::ofstream file;
+
+    if (!fileExists) {
+        // Create new file with headers
+        file.open(filename);
+        if (file.is_open()) {
+            file << "Frame,AverageDensity,MaximumDensity,RestDensity\n";
+            fileExists = true;
+        }
+    }
+    else {
+        // Append to existing file
+        file.open(filename, std::ios::app);
+    }
+
+    if (file.is_open()) {
+        static int frameCount = 0;
+        file << ++frameCount << ","
+            << avgDensity << ","
+            << maxDensity << ","
+            << params.restDensity << "\n";
+        file.close();
+    }
+    else {
+        std::cerr << "[PBFComputeSystem] Failed to open density log file: " << filename << std::endl;
+    }
 }
 
 void PBFComputeSystem::cleanup() {
