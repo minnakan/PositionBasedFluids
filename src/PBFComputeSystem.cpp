@@ -167,56 +167,18 @@ void PBFComputeSystem::step() {
         return;
     }
 
-    //timing variable
-    auto startTime = std::chrono::high_resolution_clock::now();
-    float timeMs = 0.0f;
-
-    // External forces
-    startTime = std::chrono::high_resolution_clock::now();
     applyExternalForces();
-    timeMs = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime).count() / 1000.0f;
-    logTimingData("ExternalForces", timeMs, this->currentFrame, numParticles);
 
-    // Find neighbors
-    startTime = std::chrono::high_resolution_clock::now();
     findNeighbors();
-    timeMs = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime).count() / 1000.0f;
-    logTimingData("FindNeighbors", timeMs, this->currentFrame, numParticles);
 
-    // Solver iterations
     const int solverIterations = 3;
-    float totalDensityTime = 0.0f;
-    float totalPositionTime = 0.0f;
-
     for (int iter = 0; iter < solverIterations; iter++) {
-        // Density calculation
-        startTime = std::chrono::high_resolution_clock::now();
         calculateDensity();
-        timeMs = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime).count() / 1000.0f;
-        totalDensityTime += timeMs;
-
-        // Position update
-        startTime = std::chrono::high_resolution_clock::now();
         applyPositionUpdate();
-        timeMs = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime).count() / 1000.0f;
-        totalPositionTime += timeMs;
     }
-
-    // Log density and position times
-    logTimingData("Density", totalDensityTime, this->currentFrame, numParticles);
-    logTimingData("PositionUpdate", totalPositionTime, this->currentFrame, numParticles);
-
-    // Velocity update
-    startTime = std::chrono::high_resolution_clock::now();
+    
     updateVelocity();
-    timeMs = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime).count() / 1000.0f;
-    logTimingData("VelocityUpdate", timeMs, this->currentFrame, numParticles);
-
-    // Vorticity and viscosity
-    startTime = std::chrono::high_resolution_clock::now();
     applyVorticityViscosity();
-    timeMs = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime).count() / 1000.0f;
-    logTimingData("VorticityViscosity", timeMs, this->currentFrame, numParticles);
 }
 
 void PBFComputeSystem::applyExternalForces() {
