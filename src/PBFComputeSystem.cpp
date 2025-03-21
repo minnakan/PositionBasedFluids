@@ -4,8 +4,9 @@
 #include <sstream>
 #include <fstream>
 #include <algorithm>
+#include <chrono>
 
-PBFComputeSystem::PBFComputeSystem(): externalForcesShader(nullptr), constructGridShader(nullptr), clearGridShader(nullptr), densityShader(nullptr), positionUpdateShader(nullptr), vorticityViscosityShader(nullptr), velocityUpdateShader(nullptr), simParamsUBO(0),particleSSBO(0),numParticles(0),maxParticles(0)
+PBFComputeSystem::PBFComputeSystem(): externalForcesShader(nullptr), constructGridShader(nullptr), clearGridShader(nullptr), densityShader(nullptr), positionUpdateShader(nullptr), vorticityViscosityShader(nullptr), velocityUpdateShader(nullptr), simParamsUBO(0),particleSSBO(0),numParticles(0),maxParticles(0), currentFrame(0)
 {
 }
 
@@ -166,18 +167,56 @@ void PBFComputeSystem::step() {
         return;
     }
 
+    //timing variable
+    auto startTime = std::chrono::high_resolution_clock::now();
+    float timeMs = 0.0f;
+
+    // External forces
+    startTime = std::chrono::high_resolution_clock::now();
     applyExternalForces();
+    timeMs = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime).count() / 1000.0f;
+    logTimingData("ExternalForces", timeMs, this->currentFrame, numParticles);
 
+    // Find neighbors
+    startTime = std::chrono::high_resolution_clock::now();
     findNeighbors();
+    timeMs = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime).count() / 1000.0f;
+    logTimingData("FindNeighbors", timeMs, this->currentFrame, numParticles);
 
+    // Solver iterations
     const int solverIterations = 3;
+    float totalDensityTime = 0.0f;
+    float totalPositionTime = 0.0f;
+
     for (int iter = 0; iter < solverIterations; iter++) {
+        // Density calculation
+        startTime = std::chrono::high_resolution_clock::now();
         calculateDensity();
+        timeMs = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime).count() / 1000.0f;
+        totalDensityTime += timeMs;
+
+        // Position update
+        startTime = std::chrono::high_resolution_clock::now();
         applyPositionUpdate();
+        timeMs = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime).count() / 1000.0f;
+        totalPositionTime += timeMs;
     }
-    
+
+    // Log density and position times
+    logTimingData("Density", totalDensityTime, this->currentFrame, numParticles);
+    logTimingData("PositionUpdate", totalPositionTime, this->currentFrame, numParticles);
+
+    // Velocity update
+    startTime = std::chrono::high_resolution_clock::now();
     updateVelocity();
+    timeMs = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime).count() / 1000.0f;
+    logTimingData("VelocityUpdate", timeMs, this->currentFrame, numParticles);
+
+    // Vorticity and viscosity
+    startTime = std::chrono::high_resolution_clock::now();
     applyVorticityViscosity();
+    timeMs = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - startTime).count() / 1000.0f;
+    logTimingData("VorticityViscosity", timeMs, this->currentFrame, numParticles);
 }
 
 void PBFComputeSystem::applyExternalForces() {
@@ -462,6 +501,32 @@ void PBFComputeSystem::recordDensityStatistics(const std::string& filename) {
     else {
         std::cerr << "[PBFComputeSystem] Failed to open density log file: " << filename << std::endl;
     }
+}
+
+void PBFComputeSystem::setFrameCount(int count) {
+    currentFrame = count;
+}
+
+void PBFComputeSystem::logTimingData(const std::string& stage, float timeMs, int frameCount, int numParticles) {
+    static bool headerWritten = false;
+
+    std::ofstream file("pbf_timings.csv", std::ios::app);
+    if (!file.is_open()) {
+        std::cerr << "[PBFComputeSystem] Failed to open timing log file\n";
+        return;
+    }
+
+    if (!headerWritten) {
+        std::ifstream checkFile("pbf_timings.csv");
+        if (!checkFile.good() || checkFile.peek() == std::ifstream::traits_type::eof()) {
+            file << "Frame,Stage,TimeMs,NumParticles\n";
+            headerWritten = true;
+        }
+        checkFile.close();
+    }
+
+    file << frameCount << "," << stage << "," << timeMs << "," << numParticles << "\n";
+    file.close();
 }
 
 void PBFComputeSystem::cleanup() {

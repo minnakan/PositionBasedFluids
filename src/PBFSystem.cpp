@@ -104,6 +104,7 @@ void PBFSystem::step()
     glm::vec4 scaledGravity = gravity * warmupProgress;
 
     for (int subStep = 0; subStep < numSubsteps; ++subStep) {
+        computeSystem->setFrameCount(frameCount);
         computeSystem->updateSimulationParams(dt, scaledGravity, particleRadius, h, minBoundary, maxBoundary, cellSize, maxParticlesPerCell, restDensity,vorticityEpsilon,xsphViscosityCoeff);
         computeSystem->step();
     }
@@ -119,6 +120,8 @@ void PBFSystem::step()
 
  //   std::string filename = "density_" + sceneStr + ".csv";
  //   computeSystem->recordDensityStatistics(filename);
+
+
 
     computeSystem->downloadParticles(particles);
 

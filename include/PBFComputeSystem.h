@@ -77,6 +77,8 @@ public:
     void updateSimulationParams(float dt,const glm::vec4& gravity,float particleRadius,float smoothingLength,const glm::vec4& minBoundary,const glm::vec4& maxBoundary, float cellSize, unsigned int maxParticlesPerCell, float restDensity, float vorticityEpsilon, float xsphViscosityCoeff);
 
     void recordDensityStatistics(const std::string& filename = "density_log.csv");
+    void setFrameCount(int count);
+    void logTimingData(const std::string& stage, float timeMs, int frameCount, int numParticles);
 
 private:
     void createBuffers(unsigned int maxParticles);
@@ -100,4 +102,6 @@ private:
     unsigned int numParticles;
     unsigned int maxParticles;
     SimParams params;
+
+    int currentFrame;
 };
