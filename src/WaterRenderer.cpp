@@ -8,10 +8,11 @@
 
 WaterRenderer::WaterRenderer()
     : screenWidth(0), screenHeight(0), particleRadius(0.0f),
-    depthShader(nullptr), normalShader(nullptr), passthroughShader(nullptr),
+    depthShader(nullptr), normalShader(nullptr), smoothingShader(nullptr), passthroughShader(nullptr),
     particleVAO(0), particleVBO(0), quadVAO(0), quadVBO(0), maxParticles(100000),
     depthFBO(0), depthTexture(0), depthColorTexture(0),
-    normalFBO(0), normalTexture(0)
+    normalFBO(0), normalTexture(0),
+    smoothedDepthFBO(0), smoothedDepthTexture(0)
 {
 }
 
@@ -28,6 +29,7 @@ bool WaterRenderer::initialize(int width, int height, float particleRadius) {
     try {
         depthShader = new Shader(RESOURCES_PATH"particle_depth.vert", RESOURCES_PATH"particle_depth.frag");
         normalShader = new Shader(RESOURCES_PATH"quad.vert", RESOURCES_PATH"normal_reconstruction.frag");
+        smoothingShader = new Shader(RESOURCES_PATH"quad.vert", RESOURCES_PATH"smoothing.frag");
         passthroughShader = new Shader(RESOURCES_PATH"quad.vert", RESOURCES_PATH"passthrough.frag");
         std::cout << "[WaterRenderer] Shaders loaded successfully" << std::endl;
     }
@@ -147,6 +149,23 @@ void WaterRenderer::createFramebuffers(int width, int height) {
         std::cerr << "[WaterRenderer] Normal framebuffer is not complete!" << std::endl;
     }
 
+    // Create smoothed depth framebuffer
+    glGenFramebuffers(1, &smoothedDepthFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, smoothedDepthFBO);
+
+    // Create smoothed depth texture
+    glGenTextures(1, &smoothedDepthTexture);
+    glBindTexture(GL_TEXTURE_2D, smoothedDepthTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, width, height, 0, GL_RED, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, smoothedDepthTexture, 0);
+
+    // Check framebuffer status
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        std::cerr << "[WaterRenderer] Smoothed depth framebuffer is not complete!" << std::endl;
+    }
+
     // Unbind framebuffer
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
@@ -201,10 +220,10 @@ void WaterRenderer::renderFluid(const PBFSystem& pbf, const Camera& camera, cons
     glBindVertexArray(0);
 
     // Run depth buffer analysis occasionally
-    /*static int frameCounter = 0;
+    static int frameCounter = 0;
     if (frameCounter++ % 120 == 0) {
         analyzeDepthBuffer();
-    }*/
+    }
 
     // -----------------------------------------
     // 2. Normal Reconstruction Pass
@@ -230,19 +249,58 @@ void WaterRenderer::renderFluid(const PBFSystem& pbf, const Camera& camera, cons
     glBindVertexArray(0);
 
     // -----------------------------------------
-    // 3. Visualize normals (temporary)
+    // 3. Smoothing Pass - Apply curvature flow
     // -----------------------------------------
-    // For now, let's just visualize the normals to confirm they're being calculated correctly
+    glBindFramebuffer(GL_FRAMEBUFFER, smoothedDepthFBO);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // Use smoothing shader
+    smoothingShader->use();
+    smoothingShader->setInt("depthMap", 0);
+    smoothingShader->setInt("normalMap", 1);
+    smoothingShader->setVec2("screenSize", glm::vec2(screenWidth, screenHeight));
+    smoothingShader->setInt("smoothingIterations", 2);
+    smoothingShader->setFloat("smoothingStrength", 0.3f);
+
+    // Bind textures
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, depthTexture);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, normalTexture);
+
+    // Render fullscreen quad
+    glBindVertexArray(quadVAO);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glBindVertexArray(0);
+
+    // -----------------------------------------
+    // 4. Visualize results (for debugging) 
+    // -----------------------------------------
+    // Choose which buffer to display (for testing)
+    // 0 = original depth, 1 = normals, 2 = smoothed depth
+    int displayBuffer = 2;
+
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // Use passthrough shader to display the normal texture
+    // Use passthrough shader
     passthroughShader->use();
     passthroughShader->setInt("inputTexture", 0);
 
-    // Bind normal texture
+    // Bind the chosen texture
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, normalTexture);
+    if (displayBuffer == 0) {
+        // Display original depth
+        glBindTexture(GL_TEXTURE_2D, depthTexture);
+    }
+    else if (displayBuffer == 1) {
+        // Display normals
+        glBindTexture(GL_TEXTURE_2D, normalTexture);
+    }
+    else {
+        // Display smoothed depth
+        glBindTexture(GL_TEXTURE_2D, smoothedDepthTexture);
+    }
 
     // Render fullscreen quad
     glBindVertexArray(quadVAO);
@@ -279,6 +337,9 @@ void WaterRenderer::cleanup() {
     if (normalShader) delete normalShader;
     normalShader = nullptr;
 
+    if (smoothingShader) delete smoothingShader;
+    smoothingShader = nullptr;
+
     if (passthroughShader) delete passthroughShader;
     passthroughShader = nullptr;
 
@@ -294,6 +355,8 @@ void WaterRenderer::cleanup() {
     if (depthColorTexture) glDeleteTextures(1, &depthColorTexture);
     if (normalFBO) glDeleteFramebuffers(1, &normalFBO);
     if (normalTexture) glDeleteTextures(1, &normalTexture);
+    if (smoothedDepthFBO) glDeleteFramebuffers(1, &smoothedDepthFBO);
+    if (smoothedDepthTexture) glDeleteTextures(1, &smoothedDepthTexture);
 
     // Reset all identifiers
     particleVAO = 0;
@@ -305,6 +368,8 @@ void WaterRenderer::cleanup() {
     depthColorTexture = 0;
     normalFBO = 0;
     normalTexture = 0;
+    smoothedDepthFBO = 0;
+    smoothedDepthTexture = 0;
 }
 
 void WaterRenderer::analyzeDepthBuffer() {

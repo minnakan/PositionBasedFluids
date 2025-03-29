@@ -35,8 +35,9 @@ private:
     unsigned int maxParticles;
 
     // Shaders
-    Shader* depthShader;      // For depth rendering
-    Shader* normalShader;     // For normal reconstruction
+    Shader* depthShader;       // For depth rendering
+    Shader* normalShader;      // For normal reconstruction
+    Shader* smoothingShader;   // For depth smoothing
     Shader* passthroughShader; // For visualization
 
     // Particle rendering
@@ -48,10 +49,13 @@ private:
     GLuint quadVBO;
 
     // Framebuffers and textures
-    GLuint depthFBO;          // Framebuffer for depth pass
-    GLuint depthTexture;      // Depth texture
-    GLuint depthColorTexture; // Color attachment for depth FBO (required by OpenGL)
+    GLuint depthFBO;            // Framebuffer for depth pass
+    GLuint depthTexture;        // Depth texture
+    GLuint depthColorTexture;   // Color attachment for depth FBO (required by OpenGL)
 
-    GLuint normalFBO;         // Framebuffer for normal reconstruction
-    GLuint normalTexture;     // Normal texture
+    GLuint normalFBO;           // Framebuffer for normal reconstruction
+    GLuint normalTexture;       // Normal texture
+
+    GLuint smoothedDepthFBO;    // Framebuffer for smoothed depth
+    GLuint smoothedDepthTexture; // Smoothed depth texture
 };
