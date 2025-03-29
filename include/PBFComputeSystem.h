@@ -80,6 +80,9 @@ public:
     void setFrameCount(int count);
     void logTimingData(const std::string& stage, float timeMs, int frameCount, int numParticles);
 
+    GLuint getParticleBufferId() const { return particleSSBO; }
+    unsigned int getNumParticles() const { return numParticles; }   
+
 private:
     void createBuffers(unsigned int maxParticles);
     void initializeGrid();

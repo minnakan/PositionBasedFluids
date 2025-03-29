@@ -2,6 +2,8 @@
 
 #include <vector>
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <Camera.h> 
 #include "PBFComputeSystem.h"
 
 enum class SceneType {
@@ -27,6 +29,9 @@ public:
     bool enableDebugInfo;
     SceneType currentScene;
 
+    bool computeSystemInitialized;
+    PBFComputeSystem* computeSystem;
+
     glm::vec4 originalMinBoundary;
 
     std::vector<Particle> particles;
@@ -42,13 +47,21 @@ public:
     void toggleWaveMode();
     bool isWaveModeActive() const { return waveModeActive; }
 
+    void renderParticlesGPU(Camera& camera, int screenWidth, int screenHeight);
+
+    void toggleGPURenderingMode() { useGPURendering = !useGPURendering; }
+    bool isUsingGPURendering() const { return useGPURendering; }
+
     void step();
 
 private:
     void initializeComputeSystem();
+    void initializeGPURendering();
 
-    bool computeSystemInitialized;
-    PBFComputeSystem* computeSystem;
+    unsigned int lastRenderedParticleCount = 0;
+
+    
+    
     int frameCount;
     int warmupFrames;
 
@@ -56,4 +69,10 @@ private:
     float waveTime;
     float waveAmplitude;
     float waveFrequency;
+
+    bool useGPURendering = false;
+    unsigned int gpuRenderVAO = 0;
+    unsigned int gpuRenderVBO = 0;
+    unsigned int gpuShaderProgram = 0;
+
 };

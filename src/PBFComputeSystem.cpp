@@ -171,7 +171,7 @@ void PBFComputeSystem::step() {
 
     findNeighbors();
 
-    const int solverIterations = 3;
+    const int solverIterations = 4;
     for (int iter = 0; iter < solverIterations; iter++) {
         calculateDensity();
         applyPositionUpdate();

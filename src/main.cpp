@@ -10,10 +10,12 @@
 #include <Shader.h>
 
 #include "PBFSystem.h"
+#include "WaterRenderer.h"
 
 void processInput(GLFWwindow* window);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
+void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void initParticleBuffers();
 void drawParticles(const PBFSystem& pbf, Shader& shader);
 
@@ -43,9 +45,18 @@ float lastFrame = 0.0f;
 unsigned int particleVAO = 0;
 unsigned int particleVBO = 0;
 
+float deltaFrameTime = 0.0f;
+float lastFrameTime = 0.0f;
+int frameCount = 0;
+float frameRateUpdateInterval = 1.0f;
+
 PBFSystem pbf;
 Shader* sphereShader;
 Shader* planeShader;
+Shader* directShader;
+
+WaterRenderer* waterRenderer = nullptr;
+bool useScreenSpaceWater = true;
 
 #define USE_GPU_ENGINE 0
 extern "C"
@@ -83,6 +94,11 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
         case GLFW_KEY_R: {
             std::cout << "Resetting current scene\n";
             pbf.initScene(pbf.currentScene);
+            break;
+        }
+        case GLFW_KEY_SPACE: {
+            useScreenSpaceWater = !useScreenSpaceWater;
+            std::cout << "Rendering mode: " << (useScreenSpaceWater ? "Screen Space Water" : "Points") << std::endl;
             break;
         }
         }
@@ -133,11 +149,21 @@ int main(void)
     //shaders for sphere rendering
     sphereShader = new Shader(RESOURCES_PATH"vertex.vert", RESOURCES_PATH"fragment.frag");
     planeShader = new Shader(RESOURCES_PATH"plane.vert", RESOURCES_PATH"plane.frag");
+    directShader = new Shader(RESOURCES_PATH"ssbo_render.vert", RESOURCES_PATH"fragment.frag");
 
     //particle buffers and the PBF system
     initParticleBuffers();
     initGroundPlane();
     pbf.initScene(SceneType::DamBreak);
+
+    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+
+    waterRenderer = new WaterRenderer();
+    if (!waterRenderer->initialize(SCR_WIDTH, SCR_HEIGHT, pbf.particleRadius)) {
+        std::cerr << "Failed to initialize water renderer!" << std::endl;
+        delete waterRenderer;
+        waterRenderer = nullptr;
+    }
 
     // Main rendering loop
     while (!glfwWindowShouldClose(window))
@@ -146,6 +172,18 @@ int main(void)
         float currentFrame = static_cast<float>(glfwGetTime());
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
+
+        frameCount++;
+        deltaFrameTime += deltaTime;
+
+        if (deltaFrameTime >= frameRateUpdateInterval) {
+            float fps = frameCount / deltaFrameTime;
+            //std::cout << "FPS: " << fps << " (" << (deltaTime * 1000.0f) << " ms/frame)" << std::endl;
+
+            // Reset counters
+            frameCount = 0;
+            deltaFrameTime = 0.0f;
+        }
 
         //input
         processInput(window);
@@ -159,7 +197,7 @@ int main(void)
 
         
         glm::mat4 view = camera.GetViewMatrix();
-        glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom),(float)SCR_WIDTH / (float)SCR_HEIGHT,0.1f, 1000.0f);
+        glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom),(float)SCR_WIDTH / (float)SCR_HEIGHT,0.1f, 100.0f);
         glm::mat4 model = glm::mat4(1.0f);
 
         //ground plane
@@ -171,20 +209,40 @@ int main(void)
         planeShader->setVec3("lightPos", 10.0f, 10.0f, 10.0f);
         drawGroundPlane(*planeShader);
 
-        //particle shader
-        sphereShader->use();
+		//particle shader - GPU->CPU->GPU
+        /*sphereShader->use();
         sphereShader->setMat4("model", model);
         sphereShader->setMat4("view", view);
         sphereShader->setMat4("projection", projection);
         sphereShader->setVec3("viewPos", camera.Position.x, camera.Position.y, camera.Position.z);
         sphereShader->setVec3("lightPos", 10.0f, 10.0f, 10.0f);
         sphereShader->setFloat("particleRadius", pbf.particleRadius);
+        drawParticles(pbf, *sphereShader);*/
 
-        drawParticles(pbf, *sphereShader);
+        if (useScreenSpaceWater && waterRenderer) {
+            // Use screen space water rendering
+            waterRenderer->renderFluid(pbf, camera, glm::vec3(10.0f, 10.0f, 10.0f));
+        }
+        else {
+            // Use point sprite rendering
+            directShader->use();
+            directShader->setMat4("model", model);
+            directShader->setMat4("view", view);
+            directShader->setMat4("projection", projection);
+            directShader->setVec3("viewPos", camera.Position.x, camera.Position.y, camera.Position.z);
+            directShader->setVec3("lightPos", 10.0f, 10.0f, 10.0f);
+            directShader->setFloat("particleRadius", pbf.particleRadius);
+            pbf.renderParticlesGPU(camera, SCR_WIDTH, SCR_HEIGHT);
+        }
 
         // Swap buffers and poll events
         glfwSwapBuffers(window);
         glfwPollEvents();
+    }
+
+    if (waterRenderer) {
+        waterRenderer->cleanup();
+        delete waterRenderer;
     }
 
     // Clean up
@@ -194,10 +252,12 @@ int main(void)
     glDeleteVertexArrays(1, &planeVAO);
     delete sphereShader;
     delete planeShader;
+    delete directShader;
 
     glfwTerminate();
     return 0;
 }
+
 
 void processInput(GLFWwindow* window)
 {
@@ -264,6 +324,17 @@ void initParticleBuffers()
 
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+void framebuffer_size_callback(GLFWwindow* window, int width, int height)
+{
+    // Update viewport
+    glViewport(0, 0, width, height);
+
+    // Resize water renderer framebuffers
+    if (waterRenderer) {
+        waterRenderer->resize(width, height);
+    }
 }
 
 void drawParticles(const PBFSystem& pbf, Shader& shader)
