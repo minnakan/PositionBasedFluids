@@ -22,7 +22,7 @@ PBFSystem::PBFSystem()
 	cellSize = h;
 	maxParticlesPerCell = 64;
 
-    restDensity = 125.0f;
+    restDensity = 150.0f;
 
     vorticityEpsilon = 0.008f;
     xsphViscosityCoeff = 0.01f;
@@ -202,7 +202,7 @@ void PBFSystem::createDamBreakScene()
 {
     // Dam break parameters
     const float damWidth = 14.0f;
-    const float damHeight = 50.0f;
+    const float damHeight = 60.0f;
     const float damDepth = 10.0f;
 
     const float leftOffset = minBoundary.x + particleRadius * 3.0f;

@@ -1,13 +1,14 @@
 #pragma once
 
-#include <glad/glad.h>
+#include <vector>
 #include <glm/glm.hpp>
-#include "Shader.h"
-#include "Camera.h"
-#include "PBFSystem.h"
 
-// Forward declaration to avoid circular dependency
+class Camera;
 class PBFSystem;
+class ComputeShader;
+class Shader;
+class EllipsoidalGridSearch;
+class AnisotropicSurfaceReconstruction;
 
 class WaterRenderer {
 public:
@@ -16,46 +17,49 @@ public:
 
     bool initialize(int width, int height, float particleRadius);
     void renderFluid(const PBFSystem& pbf, const Camera& camera, const glm::vec3& lightPos);
-    void resize(int width, int height);
     void cleanup();
 
-    void analyzeDepthBuffer();
+    enum class RenderMode {
+        ANISOTROPIC_PARTICLES,
+        SURFACE_ONLY,
+        PARTICLES_AND_SURFACE
+    };
+
+    RenderMode renderMode;
 
 private:
+    // Particle rendering
     void createParticleVAO();
-    void createQuadVAO();
-    void createFramebuffers(int width, int height);
+    void renderAnisotropicParticles(const PBFSystem& pbf, const Camera& camera, const glm::vec3& lightPos);
+    void computeAnisotropicParameters(const PBFSystem& pbf);
 
-    // Screen dimensions
+    // Surface rendering
+    //void createSurfaceVAO();
+    //void updateSurfaceBuffers();
+    void renderSurface(const Camera& camera, const glm::vec3& lightPos);
+    //void reconstructFluidSurface(const PBFSystem& pbf);
+
+    // Dimensions and particle scale
     int screenWidth;
     int screenHeight;
     float particleRadius;
-
-    // Maximum number of particles
     unsigned int maxParticles;
 
-    // Shaders
-    Shader* depthShader;       // For depth rendering
-    Shader* normalShader;      // For normal reconstruction
-    Shader* smoothingShader;   // For depth smoothing
-    Shader* passthroughShader; // For visualization
+    // Buffers and shaders
+    unsigned int particleVAO, particleVBO;
+    unsigned int surfaceVAO, surfaceVBO, surfaceEBO;
+    unsigned int surfaceParticleBuffer, smoothedCentersBuffer, anisotropyBuffer;
 
-    // Particle rendering
-    GLuint particleVAO;
-    GLuint particleVBO;
+    Shader* particleShader;
+    Shader* surfaceShader;
+    ComputeShader* surfaceDetectionShader;
+    ComputeShader* smoothCenterShader;
+    ComputeShader* anisotropyShader;
 
-    // Quad rendering (for post-processing)
-    GLuint quadVAO;
-    GLuint quadVBO;
-
-    // Framebuffers and textures
-    GLuint depthFBO;            // Framebuffer for depth pass
-    GLuint depthTexture;        // Depth texture
-    GLuint depthColorTexture;   // Color attachment for depth FBO (required by OpenGL)
-
-    GLuint normalFBO;           // Framebuffer for normal reconstruction
-    GLuint normalTexture;       // Normal texture
-
-    GLuint smoothedDepthFBO;    // Framebuffer for smoothed depth
-    GLuint smoothedDepthTexture; // Smoothed depth texture
+    // Surface data
+    std::vector<glm::vec3> surfaceVertices;
+    std::vector<glm::vec3> surfaceNormals;
+    std::vector<unsigned int> surfaceIndices;
+    unsigned int surfaceVertexCount;
+    unsigned int surfaceIndexCount;
 };

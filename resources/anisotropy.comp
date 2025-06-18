@@ -1,0 +1,258 @@
+#version 430 core
+
+layout(local_size_x = 256) in;
+
+struct Particle {
+    vec3 position;
+    float padding1;
+    vec3 velocity;
+    float padding2;
+    vec3 predictedPos;
+    float padding3;
+    vec3 color;
+    float padding4;
+    float density;
+    float lambda;
+    vec2 padding5;
+};
+
+// Input particles
+layout(std430, binding = 0) readonly buffer ParticleBuffer {
+    Particle particles[];
+};
+
+// Input surface flags (BINDING POINT CHANGED TO MATCH C++ CODE)
+layout(std430, binding = 1) readonly buffer SurfaceFlagsBuffer {
+    int surfaceFlags[];
+};
+
+// Input smoothed centers (BINDING POINT CHANGED TO MATCH C++ CODE)
+layout(std430, binding = 2) readonly buffer SmoothedCentersBuffer {
+    vec4 smoothedCenters[];
+};
+
+// Output anisotropy matrices (BINDING POINT CHANGED TO MATCH C++ CODE)
+layout(std430, binding = 3) writeonly buffer AnisotropyBuffer {
+    mat4 anisotropyMatrices[];
+};
+
+// Uniforms
+uniform uint numParticles;
+uniform float smoothingRadius;       // Set this to h * 2.5 as recommended in the paper
+uniform float particleRadius;        // Original h
+uniform float kr;                    // Ratio limit for eigenvalues
+uniform float ks;                    // Scaling factor for covariance matrix
+uniform float kn;                    // Scaling for isolated particles
+uniform int Neps;                    // Threshold for neighbor count
+
+// Function to compute eigenvalues and eigenvectors of a 3x3 symmetric matrix
+// Returns eigenvalues as vec3 and eigenvectors as columns of a 3x3 matrix
+void eigenDecomposition(mat3 M, out vec3 eigenvalues, out mat3 eigenvectors) {
+    // This is a simplified implementation of Jacobi eigenvalue algorithm
+    // Constants for Jacobi iteration
+    const int MAX_ITERATIONS = 50;
+    const float EPSILON = 1.0e-10;
+    
+    // Initialize eigenvectors to identity
+    eigenvectors = mat3(1.0);
+    
+    // Initialize current matrix to input matrix
+    mat3 D = M;
+    
+    // Jacobi iteration
+    for (int iter = 0; iter < MAX_ITERATIONS; iter++) {
+        // Find largest off-diagonal element
+        float maxOffDiag = 0.0;
+        int p = 0, q = 1;
+        
+        for (int i = 0; i < 3; i++) {
+            for (int j = i+1; j < 3; j++) {
+                float absVal = abs(D[i][j]);
+                if (absVal > maxOffDiag) {
+                    maxOffDiag = absVal;
+                    p = i;
+                    q = j;
+                }
+            }
+        }
+        
+        // Check for convergence
+        if (maxOffDiag < EPSILON) {
+            break;
+        }
+        
+        // Compute Jacobi rotation to zero out D[p][q]
+        float theta = 0.5 * atan(2.0 * D[p][q], D[p][p] - D[q][q]);
+        float c = cos(theta);
+        float s = sin(theta);
+        
+        // Build rotation matrix
+        mat3 J = mat3(1.0);
+        J[p][p] = c;
+        J[p][q] = -s;
+        J[q][p] = s;
+        J[q][q] = c;
+        
+        // Update matrices
+        D = transpose(J) * D * J;
+        eigenvectors = eigenvectors * J;
+    }
+    
+    // Extract eigenvalues (diagonal elements of D)
+    eigenvalues = vec3(D[0][0], D[1][1], D[2][2]);
+    
+    // Sort eigenvalues and eigenvectors in descending order
+    if (eigenvalues.x < eigenvalues.y) {
+        float tempVal = eigenvalues.x;
+        eigenvalues.x = eigenvalues.y;
+        eigenvalues.y = tempVal;
+        
+        vec3 tempVec = eigenvectors[0];
+        eigenvectors[0] = eigenvectors[1];
+        eigenvectors[1] = tempVec;
+    }
+    
+    if (eigenvalues.y < eigenvalues.z) {
+        float tempVal = eigenvalues.y;
+        eigenvalues.y = eigenvalues.z;
+        eigenvalues.z = tempVal;
+        
+        vec3 tempVec = eigenvectors[1];
+        eigenvectors[1] = eigenvectors[2];
+        eigenvectors[2] = tempVec;
+    }
+    
+    if (eigenvalues.x < eigenvalues.y) {
+        float tempVal = eigenvalues.x;
+        eigenvalues.x = eigenvalues.y;
+        eigenvalues.y = tempVal;
+        
+        vec3 tempVec = eigenvectors[0];
+        eigenvectors[0] = eigenvectors[1];
+        eigenvectors[1] = tempVec;
+    }
+}
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    if (id >= numParticles) return;
+    
+    // For interior particles (not on the surface), use isotropic kernel
+    if (surfaceFlags[id] == 0) {
+        // Use default isotropic kernel for interior particles
+        anisotropyMatrices[id] = mat4(
+            1.0 / particleRadius, 0.0, 0.0, 0.0,
+            0.0, 1.0 / particleRadius, 0.0, 0.0,
+            0.0, 0.0, 1.0 / particleRadius, 0.0,
+            0.0, 0.0, 0.0, 1.0
+        );
+        return;
+    }
+    
+    // For surface particles, compute anisotropic kernel
+    vec3 smoothedCenter = smoothedCenters[id].xyz;
+    
+    // Count neighbors and perform WPCA
+    int neighborCount = 0;
+    
+    // First pass: compute weighted mean
+    vec3 weightedSum = vec3(0.0);
+    float totalWeight = 0.0;
+    
+    for (uint j = 0; j < numParticles; j++) {
+        if (id == j) continue;
+        
+        vec3 neighborPos = particles[j].position;
+        float dist = distance(smoothedCenter, neighborPos);
+        
+        if (dist < smoothingRadius) {
+            // Weight function: (1 - r/h)³ as used in the paper
+            float weight = pow(1.0 - dist / smoothingRadius, 3.0);
+            weightedSum += weight * neighborPos;
+            totalWeight += weight;
+            neighborCount++;
+        }
+    }
+    
+    // Check if we have enough neighbors
+    if (neighborCount < Neps || totalWeight <= 0.0) {
+        // Not enough neighbors, use isotropic kernel with scaling kn
+        anisotropyMatrices[id] = mat4(
+            kn / particleRadius, 0.0, 0.0, 0.0,
+            0.0, kn / particleRadius, 0.0, 0.0,
+            0.0, 0.0, kn / particleRadius, 0.0,
+            0.0, 0.0, 0.0, 1.0
+        );
+        return;
+    }
+    
+    // Calculate weighted mean
+    vec3 weightedMean = weightedSum / totalWeight;
+    
+    // Second pass: compute weighted covariance matrix
+    mat3 covariance = mat3(0.0);
+    totalWeight = 0.0;
+    
+    for (uint j = 0; j < numParticles; j++) {
+        if (id == j) continue;
+        
+        vec3 neighborPos = particles[j].position;
+        float dist = distance(smoothedCenter, neighborPos);
+        
+        if (dist < smoothingRadius) {
+            float weight = pow(1.0 - dist / smoothingRadius, 3.0);
+            
+            // Compute deviation from weighted mean
+            vec3 diff = neighborPos - weightedMean;
+            
+            // Accumulate outer product for covariance matrix
+            covariance[0][0] += weight * diff.x * diff.x;
+            covariance[0][1] += weight * diff.x * diff.y;
+            covariance[0][2] += weight * diff.x * diff.z;
+            covariance[1][0] += weight * diff.y * diff.x;
+            covariance[1][1] += weight * diff.y * diff.y;
+            covariance[1][2] += weight * diff.y * diff.z;
+            covariance[2][0] += weight * diff.z * diff.x;
+            covariance[2][1] += weight * diff.z * diff.y;
+            covariance[2][2] += weight * diff.z * diff.z;
+            
+            totalWeight += weight;
+        }
+    }
+    
+    // Normalize covariance matrix
+    if (totalWeight > 0.0) {
+        covariance /= totalWeight;
+    }
+    
+    // Scale covariance matrix by ks
+    covariance *= ks;
+    
+    // Perform eigendecomposition to get principal axes and variances
+    vec3 eigenvalues;
+    mat3 eigenvectors;
+    eigenDecomposition(covariance, eigenvalues, eigenvectors);
+    
+    // Apply eigenvalue constraints as per the paper (equation 15)
+    // Prevent extreme deformations by limiting the ratio between eigenvalues
+    eigenvalues.y = max(eigenvalues.y, eigenvalues.x / kr);
+    eigenvalues.z = max(eigenvalues.z, eigenvalues.x / kr);
+    
+    // Create modified sigma matrix (inverse square root of eigenvalues)
+    mat3 sigmaMod = mat3(
+        1.0 / sqrt(eigenvalues.x), 0.0, 0.0,
+        0.0, 1.0 / sqrt(eigenvalues.y), 0.0,
+        0.0, 0.0, 1.0 / sqrt(eigenvalues.z)
+    );
+    
+    // Compute anisotropy matrix G = (1/h) * R * ??¹ * R^T (equation 16)
+    mat3 G = (1.0 / particleRadius) * eigenvectors * sigmaMod * transpose(eigenvectors);
+    
+    // Store as 4x4 matrix
+    anisotropyMatrices[id] = mat4(
+        G[0][0], G[0][1], G[0][2], 0.0,
+        G[1][0], G[1][1], G[1][2], 0.0,
+        G[2][0], G[2][1], G[2][2], 0.0,
+        0.0, 0.0, 0.0, 1.0
+    );
+}

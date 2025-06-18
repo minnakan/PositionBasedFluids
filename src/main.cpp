@@ -178,7 +178,7 @@ int main(void)
 
         if (deltaFrameTime >= frameRateUpdateInterval) {
             float fps = frameCount / deltaFrameTime;
-            //std::cout << "FPS: " << fps << " (" << (deltaTime * 1000.0f) << " ms/frame)" << std::endl;
+            std::cout << "FPS: " << fps << " (" << (deltaTime * 1000.0f) << " ms/frame)" << std::endl;
 
             // Reset counters
             frameCount = 0;
@@ -333,7 +333,7 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 
     // Resize water renderer framebuffers
     if (waterRenderer) {
-        waterRenderer->resize(width, height);
+        //waterRenderer->resize(width, height);
     }
 }
 
