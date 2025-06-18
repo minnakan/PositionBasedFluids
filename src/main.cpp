@@ -56,7 +56,7 @@ Shader* planeShader;
 Shader* directShader;
 
 WaterRenderer* waterRenderer = nullptr;
-bool useScreenSpaceWater = true;
+bool useScreenSpaceWater = false;
 
 #define USE_GPU_ENGINE 0
 extern "C"
